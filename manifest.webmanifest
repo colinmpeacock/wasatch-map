@@ -1,0 +1,32 @@
+{
+  "name": "Wasatch Backcountry Planner",
+  "short_name": "Wasatch BC",
+  "description": "3D terrain, slope and aspect shading, avalanche forecast zones, routes and offline maps for the Wasatch.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d131b",
+  "theme_color": "#1f5bd1",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\"%3E%3Crect width=\"512\" height=\"512\" rx=\"96\" fill=\"%231f5bd1\"/%3E%3Cpath d=\"M40 404 L196 168 L262 266 L320 186 L472 404 Z\" fill=\"%23ffffff\"/%3E%3Cpath d=\"M196 168 L232 222 L212 244 L196 222 L176 248 L164 216 Z M320 186 L346 222 L330 236 L316 222 L302 236 L296 220 Z\" fill=\"%231f5bd1\" opacity=\"0.35\"/%3E%3Cpath d=\"M60 430 H452\" stroke=\"%23ffffff\" stroke-width=\"16\" stroke-linecap=\"round\" opacity=\"0.6\"/%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
