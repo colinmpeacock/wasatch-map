@@ -1,0 +1,47 @@
+# Pulls the Utah Avalanche Center forecasts every morning and saves them to data/uac/latest.json,
+# which the map reads. Times are UTC: 11:00-16:45 UTC covers 5-9:45 AM in both MST and MDT.
+# GitHub can start scheduled runs a few minutes late; that's fine for a morning forecast.
+name: UAC forecast
+
+on:
+  schedule:
+    - cron: "*/15 11-16 * * *"   # every 15 min during the morning issue window
+    - cron: "30 19 * * *"         # one afternoon check in case of an update
+  workflow_dispatch: {}           # "Run workflow" button on the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uac-forecast
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch forecasts
+        env:
+          # Set these under Settings > Secrets and variables > Actions > Variables.
+          UAC_CONTACT: ${{ vars.UAC_CONTACT }}
+          UAC_SITE: https://github.com/${{ github.repository }}
+        run: python scripts/fetch_uac.py --out data/uac
+
+      - name: Commit if changed
+        run: |
+          if [ -n "$(git status --porcelain data/uac)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/uac
+            git commit -m "UAC forecast $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          else
+            echo "No new forecast."
+          fi
