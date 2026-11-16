@@ -1770,6 +1770,289 @@ setTimeout(updateZone, 1500); setTimeout(updateZone, 5000);
 })();
 
 </script>
+<!-- module: placenames -->
+<script>
+/* Place names: peak, pass, lake and ridge labels on the map, plus W.placeName(lng, lat) for other modules.
+   Data: OpenStreetMap via OpenFreeMap vector tiles (OpenMapTiles schema), free for commercial use with attribution. */
+(() => { 'use strict';
+const W = window.wbp; if(!W) return;
+const map = W.map;
+
+const TILEJSON = 'https://tiles.openfreemap.org/planet';
+const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+const SRC = 'wbp-names';
+const KEY = 'wbp.names';
+const prefs = Object.assign({on: true}, W.store.get(KEY, {}));
+
+/* ---------- map labels ---------- */
+const FONT_R = ['Noto Sans Regular'], FONT_I = ['Noto Sans Italic'], FONT_B = ['Noto Sans Bold'];
+const NAME = ['coalesce', ['get', 'name'], ['get', 'name_en'], ['get', 'name:latin']];
+const ELE_FT = ['case',
+  ['has', 'ele_ft'], ['to-number', ['get', 'ele_ft'], -1],
+  ['has', 'ele'], ['round', ['*', ['to-number', ['get', 'ele'], -1], 3.28084]],
+  -1];
+const PEAK_TEXT = ['case', ['>', ELE_FT, 0],
+  ['format', NAME, {}, '\n', {},
+    ['concat', ['number-format', ELE_FT, {'locale': 'en-US', 'max-fraction-digits': 0}], ' ft'], {'font-scale': 0.82, 'text-font': ['literal', FONT_R]}],
+  NAME];
+const HALO = {'text-halo-color': 'rgba(255,255,255,0.94)', 'text-halo-width': 1.6, 'text-halo-blur': 0.3};
+const NOT_SEA = ['!', ['match', ['get', 'class'], ['ocean', 'sea'], true, false]];
+const LAYERS = [
+  {id: 'names-lake-line', type: 'symbol', source: SRC, 'source-layer': 'water_name', minzoom: 11,
+    filter: ['all', ['has', 'name'], ['==', ['geometry-type'], 'LineString'], NOT_SEA],
+    layout: {'symbol-placement': 'line', 'text-field': NAME, 'text-font': FONT_I, 'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10.5, 15, 13],
+      'text-letter-spacing': 0.04, 'text-max-angle': 30},
+    paint: {'text-color': '#1f5684', ...HALO}},
+  {id: 'names-lake', type: 'symbol', source: SRC, 'source-layer': 'water_name', minzoom: 11,
+    filter: ['all', ['has', 'name'], ['==', ['geometry-type'], 'Point'], NOT_SEA],
+    layout: {'text-field': NAME, 'text-font': FONT_I, 'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10.5, 15, 13], 'text-max-width': 7},
+    paint: {'text-color': '#1f5684', ...HALO}},
+  {id: 'names-ridge', type: 'symbol', source: SRC, 'source-layer': 'mountain_peak', minzoom: 13,
+    filter: ['all', ['has', 'name'], ['==', ['geometry-type'], 'LineString'], ['match', ['get', 'class'], ['ridge', 'arete'], true, false]],
+    layout: {'symbol-placement': 'line', 'text-field': NAME, 'text-font': FONT_I, 'text-size': 11, 'text-letter-spacing': 0.12, 'text-max-angle': 35},
+    paint: {'text-color': '#5a4430', ...HALO}},
+  {id: 'names-saddle', type: 'symbol', source: SRC, 'source-layer': 'mountain_peak', minzoom: 12,
+    filter: ['all', ['has', 'name'], ['==', ['geometry-type'], 'Point'], ['==', ['get', 'class'], 'saddle']],
+    layout: {'icon-image': 'wbp-saddle', 'text-field': NAME, 'text-font': FONT_I, 'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10.5, 15, 12.5],
+      'text-anchor': 'top', 'text-offset': [0, 0.45], 'text-max-width': 7},
+    paint: {'text-color': '#45352a', ...HALO}},
+  {id: 'names-peak', type: 'symbol', source: SRC, 'source-layer': 'mountain_peak', minzoom: 9,
+    filter: ['all', ['has', 'name'], ['==', ['geometry-type'], 'Point'], ['match', ['get', 'class'], ['peak', 'volcano'], true, false]],
+    layout: {'icon-image': 'wbp-peak', 'text-field': PEAK_TEXT, 'text-font': FONT_B, 'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 12, 11.5, 15, 13.5],
+      'text-anchor': 'top', 'text-offset': [0, 0.5], 'text-max-width': 8, 'symbol-sort-key': ['-', 0, ELE_FT]},
+    paint: {'text-color': '#1e1912', ...HALO}}
+];
+const IDS = LAYERS.map(l => l.id);
+
+function icon(draw, w, h){
+  const r = 2, c = document.createElement('canvas'); c.width = w * r; c.height = h * r;
+  const g = c.getContext('2d'); g.scale(r, r); draw(g);
+  return g.getImageData(0, 0, w * r, h * r);
+}
+const PEAK_ICON = () => icon(g => {
+  g.beginPath(); g.moveTo(6, 1.2); g.lineTo(11, 9.8); g.lineTo(1, 9.8); g.closePath();
+  g.lineJoin = 'round'; g.lineWidth = 2; g.strokeStyle = '#ffffff'; g.stroke(); g.fillStyle = '#3a2c1e'; g.fill();
+}, 12, 11);
+const SADDLE_ICON = () => icon(g => {
+  g.lineCap = 'round';
+  for(const [col, w] of [['#ffffff', 3.4], ['#45352a', 1.5]]){
+    g.strokeStyle = col; g.lineWidth = w;
+    g.beginPath(); g.moveTo(2, 2); g.quadraticCurveTo(5, 5, 2, 8); g.stroke();
+    g.beginPath(); g.moveTo(10, 2); g.quadraticCurveTo(7, 5, 10, 8); g.stroke();
+  }
+}, 12, 10);
+
+// The OpenFreeMap streets style labels lakes itself, so skip ours there to avoid doubled names.
+const LAKE_IDS = new Set(['names-lake', 'names-lake-line']);
+const visFor = id => prefs.on && !(LAKE_IDS.has(id) && map.getLayer('water_name_point_label')) ? 'visible' : 'none';
+function addLayers(){
+  try{
+    if(!map.getStyle().glyphs) map.setGlyphs(GLYPHS);
+    if(!map.hasImage('wbp-peak')) map.addImage('wbp-peak', PEAK_ICON(), {pixelRatio: 2});
+    if(!map.hasImage('wbp-saddle')) map.addImage('wbp-saddle', SADDLE_ICON(), {pixelRatio: 2});
+    if(!map.getSource(SRC)) map.addSource(SRC, {type: 'vector', url: TILEJSON});
+    for(const l of LAYERS) if(!map.getLayer(l.id)) map.addLayer({...l, layout: {...l.layout, visibility: visFor(l.id)}});
+    raise();
+  }catch(e){ console.warn('place names', e); }
+}
+// Keep the labels above slope, sun and rose shading, which other modules add on top of the map later.
+let raising = false;
+function raise(){
+  if(raising) return;
+  let order; try{ order = map.getLayersOrder(); }catch(e){ return; }
+  const ours = IDS.filter(id => order.includes(id)); if(!ours.length) return;
+  const tail = order.slice(order.length - ours.length);
+  if(tail.every((id, i) => id === ours[i])) return;
+  raising = true;
+  try{ for(const id of ours) map.moveLayer(id); }catch(e){} finally{ raising = false; }
+}
+let raiseQueued = false;
+map.on('styledata', () => { if(raiseQueued) return; raiseQueued = true; requestAnimationFrame(() => { raiseQueued = false; raise(); }); });
+W.whenStyle(addLayers);
+
+function setOn(on){
+  prefs.on = on; W.store.set(KEY, prefs);
+  if(on && !map.getLayer(IDS[0])) addLayers();
+  for(const id of IDS) if(map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visFor(id));
+}
+(() => {
+  const hs = document.getElementById('hs'), anchor = hs && hs.closest('label');
+  const lab = document.createElement('label'); lab.className = 'switch';
+  lab.innerHTML = '<span>Peak, pass and lake names</span><input type="checkbox" id="namesOn">';
+  if(anchor) anchor.after(lab);
+  else{ const sec = W.addSection('placenames', 'Place names'); sec.append(lab); }
+  const cb = lab.querySelector('input'); cb.checked = prefs.on;
+  cb.addEventListener('change', () => setOn(cb.checked));
+})();
+
+/* ---------- vector tile decoding (Mapbox Vector Tile 2.1) ---------- */
+const td = new TextDecoder();
+function varint(r){ let v = 0, s = 1, c; do{ c = r.b[r.i++]; v += (c & 0x7f) * s; s *= 128; }while(c & 0x80); return v; }
+function skip(r, w){
+  if(w === 0) varint(r); else if(w === 1) r.i += 8; else if(w === 2){ const n = varint(r); r.i += n; } else if(w === 5) r.i += 4;
+  else throw new Error('unsupported protobuf wire type ' + w);
+}
+function str(r){ const n = varint(r), s = td.decode(r.b.subarray(r.i, r.i + n)); r.i += n; return s; }
+function packed(r){ const n = varint(r), end = r.i + n, out = []; while(r.i < end) out.push(varint(r)); return out; }
+function value(r, end){
+  let v = null;
+  while(r.i < end){
+    const tag = varint(r), f = Math.floor(tag / 8), w = tag & 7;
+    if(f === 1 && w === 2) v = str(r);
+    else if(f === 2 && w === 5){ v = new DataView(r.b.buffer, r.b.byteOffset + r.i, 4).getFloat32(0, true); r.i += 4; }
+    else if(f === 3 && w === 1){ v = new DataView(r.b.buffer, r.b.byteOffset + r.i, 8).getFloat64(0, true); r.i += 8; }
+    else if((f === 4 || f === 5) && w === 0){ v = varint(r); if(f === 4 && v >= 9223372036854775807) v -= 18446744073709551616; }
+    else if(f === 6 && w === 0){ const u = varint(r); v = u % 2 ? -(u + 1) / 2 : u / 2; }
+    else if(f === 7 && w === 0) v = !!varint(r);
+    else skip(r, w);
+  }
+  r.i = end; return v;
+}
+function points(g){
+  const pts = []; let x = 0, y = 0, i = 0;
+  while(i < g.length){
+    const c = g[i++], id = c & 7, n = c >> 3;
+    if(id === 1 || id === 2) for(let k = 0; k < n && i + 1 < g.length; k++){
+      const dx = g[i++], dy = g[i++]; x += (dx >> 1) ^ -(dx & 1); y += (dy >> 1) ^ -(dy & 1); pts.push([x, y]);
+    }
+  }
+  return pts;
+}
+function decodeTile(buf, want){
+  const r = {b: buf, i: 0}, out = {};
+  while(r.i < buf.length){
+    const tag = varint(r), f = Math.floor(tag / 8), w = tag & 7;
+    if(f !== 3 || w !== 2){ skip(r, w); continue; }
+    const end = varint(r) + r.i, L = {name: '', extent: 4096, keys: [], values: [], feats: []};
+    while(r.i < end){
+      const t = varint(r), lf = Math.floor(t / 8), lw = t & 7;
+      if(lf === 1 && lw === 2) L.name = str(r);
+      else if(lf === 5 && lw === 0) L.extent = varint(r);
+      else if(lf === 3 && lw === 2) L.keys.push(str(r));
+      else if(lf === 4 && lw === 2){ const n = varint(r); L.values.push(value(r, r.i + n)); }
+      else if(lf === 2 && lw === 2){ const n = varint(r); L.feats.push([r.i, r.i + n]); r.i += n; }
+      else skip(r, lw);
+    }
+    if(want.has(L.name)){
+      out[L.name] = {extent: L.extent, features: L.feats.map(([s, e]) => {
+        r.i = s; let tags = [], type = 0, geom = [];
+        while(r.i < e){
+          const t = varint(r), ff = Math.floor(t / 8), fw = t & 7;
+          if(ff === 2 && fw === 2) tags = packed(r); else if(ff === 3 && fw === 0) type = varint(r); else if(ff === 4 && fw === 2) geom = packed(r); else skip(r, fw);
+        }
+        const props = {}; for(let k = 0; k + 1 < tags.length; k += 2) props[L.keys[tags[k]]] = L.values[tags[k + 1]];
+        return {type, props, pts: points(geom)};
+      })};
+    }
+    r.i = end;
+  }
+  return out;
+}
+
+/* ---------- tile fetching ---------- */
+let tjP = null;
+function tileTemplate(){
+  if(!tjP) tjP = fetch(TILEJSON).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => { if(!j || !Array.isArray(j.tiles) || !j.tiles[0]) throw new Error('no tile URL in the tile index'); return j.tiles[0]; })
+    .catch(e => { tjP = null; throw e; });
+  return tjP;
+}
+const tileMem = new Map();
+const WANT = new Set(['mountain_peak', 'water_name', 'place']);
+async function gunzipMaybe(u8){
+  if(u8[0] === 0x1f && u8[1] === 0x8b && typeof DecompressionStream === 'function')
+    return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  return u8;
+}
+function tileFeatures(z, x, y){
+  const k = z + '/' + x + '/' + y;
+  if(tileMem.has(k)) return tileMem.get(k);
+  const p = (async () => {
+    const url = (await tileTemplate()).replace('{z}', z).replace('{x}', x).replace('{y}', y);
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
+    let r; try{ r = await fetch(url, {signal: ctl.signal}); } finally{ clearTimeout(to); }
+    if(r.status === 204 || r.status === 404) return [];
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const tile = decodeTile(await gunzipMaybe(new Uint8Array(await r.arrayBuffer())), WANT), n = Math.pow(2, z), out = [];
+    for(const [layer, L] of Object.entries(tile)){
+      const toLL = ([px, py]) => {
+        const lng = (x + px / L.extent) / n * 360 - 180;
+        const m = Math.PI * (1 - 2 * (y + py / L.extent) / n);
+        return [lng, Math.atan(Math.sinh(m)) * 180 / Math.PI];
+      };
+      for(const f of L.features){
+        const name = f.props.name || f.props.name_en || f.props['name:latin'];
+        if(!name || !f.pts.length) continue;
+        const cls = String(f.props.class || '');
+        let kind = null;
+        if(layer === 'mountain_peak') kind = (cls === 'peak' || cls === 'volcano') ? 'peak' : cls === 'saddle' ? 'saddle' : null;
+        else if(layer === 'water_name') kind = (cls === 'ocean' || cls === 'sea') ? null : 'lake';
+        else if(layer === 'place') kind = /^(town|village|hamlet|suburb|neighbourhood|isolated_dwelling|locality)$/.test(cls) ? 'place' : null;
+        if(!kind) continue;
+        const eleFt = isFinite(+f.props.ele_ft) ? +f.props.ele_ft : isFinite(+f.props.ele) && f.props.ele !== '' && f.props.ele != null ? Math.round(+f.props.ele * W.FT) : null;
+        out.push({kind, name: String(name), eleFt, pts: f.pts.map(toLL)});
+      }
+    }
+    return out;
+  })();
+  tileMem.set(k, p);
+  p.catch(() => tileMem.delete(k));
+  if(tileMem.size > 48) tileMem.delete(tileMem.keys().next().value);
+  return p;
+}
+// The 2x2 block of tiles nearest the point, so features at least half a tile away in every direction are included.
+async function featuresNear(lng, lat, z){
+  const n = Math.pow(2, z), fx = (lng + 180) / 360 * n;
+  const s = Math.sin(lat * Math.PI / 180), fy = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+  const x0 = Math.floor(fx - 0.5), y0 = Math.floor(fy - 0.5), jobs = [];
+  for(const dx of [0, 1]) for(const dy of [0, 1]){ const x = ((x0 + dx) % n + n) % n, y = y0 + dy; if(y >= 0 && y < n) jobs.push(tileFeatures(z, x, y)); }
+  const lists = await Promise.all(jobs), best = new Map();
+  for(const f of lists.flat()){
+    let d = Infinity, at = f.pts[0];
+    for(const p of f.pts){ const dd = W.hav([lng, lat], p); if(dd < d){ d = dd; at = p; } }
+    const key = f.kind + '|' + f.name + '|' + at[0].toFixed(2) + ',' + at[1].toFixed(2);
+    if(!best.has(key) || best.get(key).d > d) best.set(key, {...f, d, at});
+  }
+  return [...best.values()];
+}
+
+/* ---------- describing a point ---------- */
+const AT = {peak: 110, saddle: 110, lake: 220, place: 350};      // metres: "at" the feature
+const WEIGHT = {peak: 1, saddle: 0.9, lake: 0.85, place: 0.55};   // lower weight needs to be closer to win
+const RANK = {peak: 0, saddle: 1, lake: 2, place: 3};
+const DIR8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const fmtDist = m => { const mi = m / W.MI; return mi < 0.1 ? Math.max(50, Math.round(m * W.FT / 50) * 50).toLocaleString('en-US') + ' ft' : (mi < 10 ? mi.toFixed(1) : String(Math.round(mi))) + ' mi'; };
+function describe(c, lng, lat){
+  const atLabel = c.kind === 'peak' ? c.name + ' summit'
+    : c.kind === 'saddle' && !/pass|saddle|col|notch|gap|divide/i.test(c.name) ? c.name + ' (saddle)' : c.name;
+  const base = {name: c.name, kind: c.kind, dist: c.d, featureEleFt: c.eleFt, featureLngLat: c.at};
+  if(c.d <= AT[c.kind]) return {...base, label: atLabel, at: true};
+  const dir = DIR8[Math.round(W.bearingOf(c.at, [lng, lat]) / 45) % 8];
+  return {...base, dir, at: false, label: `${fmtDist(c.d)} ${dir} of ${c.name}`};
+}
+const memo = new Map();
+// Resolves to {label, name, kind, dist, dir, at, featureEleFt} or null when nothing named is close; rejects if the tiles cannot load.
+async function placeName(lng, lat){
+  const key = lng.toFixed(4) + ',' + lat.toFixed(4);
+  if(memo.has(key)) return memo.get(key);
+  const pick = (cands, maxD, kinds) => {
+    const ok = cands.filter(c => kinds.includes(c.kind) && c.d <= maxD);
+    const at = ok.filter(c => c.d <= AT[c.kind]).sort((a, b) => RANK[a.kind] - RANK[b.kind] || a.d - b.d)[0];
+    if(at) return at;
+    return ok.sort((a, b) => a.d / WEIGHT[a.kind] - b.d / WEIGHT[b.kind])[0] || null;
+  };
+  let c = pick(await featuresNear(lng, lat, 13), 3200, ['peak', 'saddle', 'lake', 'place']);
+  if(!c) c = pick(await featuresNear(lng, lat, 11), 9000, ['peak', 'place']);   // only the more prominent peaks at this zoom
+  const res = c ? describe(c, lng, lat) : null;
+  memo.set(key, res); if(memo.size > 200) memo.delete(memo.keys().next().value);
+  return res;
+}
+W.placeName = placeName;
+W.placeNameSource = 'OpenStreetMap contributors, via OpenFreeMap';
+W._placenames = {decodeTile, featuresNear};
+})();
+
+</script>
 <!-- module: conditions -->
 <script>
 /* Snow and weather: NWS forecast, 24 h wind strip and snowfall, wind-loading aspects, nearest SNOTEL stations. */
@@ -1788,7 +2071,10 @@ const TZ = 'America/Denver';
 /* ---------- style ---------- */
 const css = document.createElement('style');
 css.textContent = `
-.conditions-pt{font:12px var(--font-data);color:var(--muted)}
+.conditions-where{display:grid;gap:2px;min-width:0}
+.conditions-place{font-size:14.5px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+.conditions-place.conditions-pending{color:var(--muted);font-weight:500}
+.conditions-pt{font:12px var(--font-data);color:var(--muted);overflow-wrap:anywhere}
 .conditions-block{display:grid;gap:8px}
 .conditions-periods{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .conditions-period{background:var(--surface-2);border-radius:8px;padding:7px 8px;min-width:0;display:grid;gap:2px}
@@ -1824,7 +2110,7 @@ document.head.append(css);
 /* ---------- UI ---------- */
 const sec = W.addSection('conditions', 'Snow and weather');
 sec.insertAdjacentHTML('beforeend', `
-  <div class="row between"><span class="conditions-pt" id="conditions-pt">No point yet</span></div>
+  <div class="conditions-where"><span class="conditions-place conditions-pending" id="conditions-place">No point yet</span><span class="conditions-pt" id="conditions-pt"></span></div>
   <div class="row">
     <button class="btn" id="conditions-center" type="button">Use map center</button>
     <button class="btn" id="conditions-pick" type="button">Use a spot on the map</button>
@@ -1918,8 +2204,12 @@ async function loadNws(lat, lng){
   const rl = pr.relativeLocation && pr.relativeLocation.properties;
   const fp = fc.value.properties || {};
   const gp = gd.status === 'fulfilled' ? (gd.value.properties || {}) : null;
+  const hp = hr.status === 'fulfilled' && hr.value.properties ? hr.value.properties : {};
+  const eq = [fp.elevation, gp && gp.elevation, hp.elevation].find(q => q && q.value != null && isFinite(+q.value));
+  const gridElevFt = eq ? (/ft|foot/.test(eq.unitCode || '') ? +eq.value : +eq.value * W.FT) : null;
   return {
     place: rl && rl.city ? rl.city + ', ' + rl.state : '',
+    gridElevFt,
     office: pr.gridId || pr.cwa || '',
     issued: Date.parse(fp.updateTime || fp.updated || fp.generatedAt) || null,
     periods: Array.isArray(fp.periods) ? fp.periods : [],
@@ -1974,12 +2264,28 @@ const keyOf = p => p.lat.toFixed(3) + ',' + p.lng.toFixed(3);
 const SOURCES = {nws: loadNws, snotel: loadSnotel};
 
 function setPoint(lng, lat, src){
-  pt = {lng, lat, src};
+  pt = {lng, lat, src, where: undefined, whereErr: '', here: null, hereErr: ''};
+  lookupHere(pt);
   try{
     if(!pin){ const el = document.createElement('div'); el.className = 'conditions-pin'; el.title = 'Snow and weather point'; pin = new W.maplibregl.Marker({element: el}); }
     pin.setLngLat([lng, lat]).addTo(W.map);
   }catch(e){ console.warn('conditions pin', e); }
   load(false);
+}
+// Place name (nearest named peak, pass or lake) and the elevation, slope and aspect of the point itself.
+function lookupHere(p){
+  const done = () => { if(pt === p) render(); };
+  if(typeof W.placeName === 'function') W.placeName(p.lng, p.lat).then(r => { p.where = r; }, e => { p.where = undefined; p.whereErr = e.message || String(e); }).finally(done);
+  else p.whereErr = 'not available';
+  W.samplerFor([[p.lng, p.lat]]).then(S => { const s = S.at(p.lng, p.lat); if(isFinite(s.elev)) p.here = s; else p.hereErr = 'no data'; },
+    e => { p.hereErr = e.message || 'no data'; }).finally(done);
+}
+function placeText(){
+  if(pt.where) return pt.where.label;
+  const nws = (cache.get(keyOf(pt)) || {}).nws, town = nws && nws.data && nws.data.place;
+  if(pt.where === null) return town ? 'Near ' + town : 'No named peak, pass or lake nearby';
+  if(pt.whereErr) return town ? 'Near ' + town : 'Place name unavailable';
+  return 'Finding the nearest named peak…';
 }
 async function load(force){
   if(!pt) return;
@@ -2040,6 +2346,23 @@ function stripSvg(pairs){
   return `<div class="conditions-strip"><svg viewBox="0 0 ${w} 52" role="img" aria-label="Hourly wind for the next 24 hours, every 2 hours, arrows point downwind, speeds in mph">${cells}</svg></div>`;
 }
 
+// NWS forecasts describe a ~2.5 km grid cell at its average elevation, which can sit far below a summit or above a canyon floor.
+const LAPSE_F_PER_1000FT = 3.5;
+function gridLine(d){
+  if(d.gridElevFt == null) return '';
+  const g = Math.round(d.gridElevFt);
+  let t = `The NWS forecast is for the grid cell around this point (about 1.5 mi across), at an average elevation of ${g.toLocaleString('en-US')} ft.`;
+  const here = pt && pt.here;
+  if(here && isFinite(here.elev)){
+    const diff = Math.round(here.elev * W.FT - g), a = Math.abs(diff), dT = Math.round(a / 1000 * LAPSE_F_PER_1000FT);
+    if(a >= 300){
+      t += ` Your point is ${a.toLocaleString('en-US')} ft ${diff > 0 ? 'higher' : 'lower'}`;
+      t += dT >= 2 ? `, so expect it to be roughly ${dT}°F ${diff > 0 ? 'colder' : 'warmer'} than shown at a typical mountain lapse rate. Inversions can reverse this, especially in canyons on calm, clear mornings.` : '.';
+    } else t += ' That is close to the elevation of your point.';
+  }
+  return `<div class="conditions-src">${t}</div>`;
+}
+
 function renderNws(s){
   const box = $('conditions-nws'), wbox = $('conditions-wind');
   if(!s || (!s.data && !s.err)){ box.innerHTML = '<div class="conditions-src">NWS forecast: loading…</div>'; wbox.innerHTML = ''; return; }
@@ -2066,8 +2389,10 @@ function renderNws(s){
       <div class="stat"><small>Wind 24 h</small><div class="v">${ws && !ws.calm ? DIRS16[Math.round(ws.dir / 22.5) % 16] + ' ' + Math.round(ws.mean) : ws ? 'Calm' : 'n/a'}</div></div>
     </div>
     ${!d.snow ? `<div class="conditions-src">Snowfall: ${d.gridErr ? 'gridpoint data did not load (' + esc(d.gridErr) + ').' : 'not in this gridpoint forecast.'}</div>` : (s48 && !s48.complete ? '<div class="conditions-src">Snowfall grid ends before 48 h; the "+" means the total covers less time.</div>' : '')}
+    ${gridLine(d)}
     ${ws && ws.from === 'hourly' ? stripSvg(ws.hrs) : `<div class="conditions-src">Hourly wind: ${d.hourlyErr ? 'did not load (' + esc(d.hourlyErr) + ').' : 'not available.'}</div>`}
-    ${statusLine('nws', s, `NWS (api.weather.gov)${d.place ? ' near ' + esc(d.place) : ''}, ${esc(d.office)} office${d.issued ? ', issued ' + fmtClock(d.issued) : ''}`)}`;
+    ${statusLine('nws', s, `NWS (api.weather.gov)${d.place ? ' near ' + esc(d.place) : ''}, ${esc(d.office)} office${d.issued ? ', issued ' + fmtClock(d.issued) : ''}`)}
+    ${pt.where ? `<div class="conditions-src">Place name: ${esc(W.placeNameSource || 'OpenStreetMap contributors')}. Elevation, slope and aspect: the map's elevation data.</div>` : ''}`;
   if(!ws){ wbox.innerHTML = '<div class="conditions-src">No wind direction in the forecast, so wind loading cannot be estimated.</div>'; return; }
   if(ws.calm){ wbox.innerHTML = '<div class="conditions-load"><span>Winds are forecast calm for the next 24 hours, so there is no clear loading direction.</span></div>'; return; }
   const names = ws.lee.map(i => ASP[i]).join(', ');
@@ -2113,7 +2438,13 @@ function renderSnotel(s){
 
 function render(){
   if(!pt) return;
-  $('conditions-pt').textContent = `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)} (${pt.src === 'spot' ? 'picked spot' : 'map center'})`;
+  const plc = $('conditions-place'), h = pt.here;
+  plc.textContent = placeText();
+  plc.classList.toggle('conditions-pending', !pt.where);
+  plc.title = pt.where ? 'Nearest named feature, from OpenStreetMap' : pt.whereErr ? 'Place names did not load: ' + pt.whereErr : '';
+  const elev = h ? `${W.fmtFt(h.elev)} · ${Math.round(h.slope)}° ${h.slope < 3 ? 'flat' : W.aspectName(h.aspect) + '-facing'}` : pt.hereErr ? 'Elevation unavailable' : 'Elevation…';
+  $('conditions-pt').textContent = `${elev} · ${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)} · ${pt.src === 'spot' ? 'picked spot' : 'map center'}`;
+  if(pin && pin.getElement) pin.getElement().title = 'Snow and weather point: ' + placeText();
   const ent = cache.get(keyOf(pt)) || {};
   renderNws(ent.nws); renderSnotel(ent.snotel);
   const busy = Object.values(ent).some(s => s && s.loading);
@@ -3395,6 +3726,7 @@ function applyTab(){
     const sec = h.closest('section'); h.classList.toggle('dup-h', sec.dataset.tab === t && norm(h.textContent) === norm(title.textContent)); });
   const open = isOpen();
   panel.hidden = !open;
+  body.hidden = false;   // the core layout hides the body on phones until its own Open button is used; the shell shows/hides the whole drawer instead
   Object.entries(railBtns).forEach(([id, b]) => {
     const extraActive = id === 'more' && PHONE.matches && (t === 'more' || (TAB[t] && TAB[t].extra));
     b.setAttribute('aria-pressed', String(open && (id === t || extraActive)));
@@ -3441,7 +3773,20 @@ applyTab();
 placeDock();
 W.relayout();
 /* On phones the expanded attribution box covers the map; start it collapsed (the (i) button opens it). */
-W.map.once('load', () => { if(PHONE.matches){ const a = document.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact-show'); if(a){ a.classList.remove('maplibregl-compact-show'); a.removeAttribute('open'); } } });
+// On phones MapLibre pops the credits box open whenever a new data source adds a credit line (e.g. place names loading
+// after the map, or the window narrows). Keep it collapsed unless the person taps the (i) button themselves.
+(() => {
+  let userOpened = false;
+  const collapse = () => {
+    if(!PHONE.matches || userOpened) return;
+    const a = document.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact-show');
+    if(a){ a.classList.remove('maplibregl-compact-show'); a.removeAttribute('open'); }
+  };
+  document.addEventListener('click', e => { if(e.target.closest && e.target.closest('.maplibregl-ctrl-attrib-button')) userOpened = true; }, true);
+  const el = document.querySelector('.maplibregl-ctrl-attrib');
+  if(el && typeof MutationObserver === 'function') new MutationObserver(collapse).observe(el, {attributes: true, attributeFilter: ['class', 'open']});
+  W.map.once('load', collapse);
+})();
 setTimeout(() => W.relayout(), 600);
 })();
 
