@@ -1489,43 +1489,42 @@ if(saved && saved.template && isTemplate(saved.template)){
 })();
 
 </script>
-<!-- module: uacforecast -->
+<!-- module: myrose -->
 <script>
-/* UAC forecast module: today's Utah Avalanche Center forecast in the panel and on the terrain.
-   Reads data/uac/latest.json written by scripts/fetch_uac.py (run by the "UAC forecast" GitHub Action). */
+/* "My danger rose": the user copies today's danger rose from their local avalanche forecast,
+   and the map colors steep terrain from what they entered. Nothing here is fetched from a forecast center. */
 (() => {
 'use strict';
 const W = window.wbp; if(!W) return;
 const map = W.map;
-const ASP = W.ASPECTS, BAND_NAMES = ['Upper', 'Mid', 'Lower'], BAND_KEYS = ['high', 'mid', 'low'];
-const WORDS = ['No rating','Pockets of low','Low','Pockets of moderate','Moderate','Pockets of considerable','Considerable','Pockets of high','High','Pockets of extreme','Extreme'];
-const DEFAULT_URL = 'data/uac/latest.json';
-const STORE = 'wbp.uac';
+const ASP = W.ASPECTS, BAND_NAMES = ['Upper', 'Mid', 'Lower'];
+const LEVELS = [1, 2, 3, 4, 5];
+const STORE = 'wbp.myrose';
+const DEFAULT_LINK = 'https://utahavalanchecenter.org/';
 
 const saved = W.store.get(STORE, {}) || {};
 const S = {
-  url: saved.url || DEFAULT_URL, follow: saved.follow !== false, region: saved.region || 'salt-lake',
-  layerPref: saved.layerPref, minSlope: saved.minSlope || 30, opacity: saved.opacity || 0.7,
-  data: null, source: '', loadedAt: null, error: '', ver: 1, on: false
+  zones: saved.zones || {}, layerOn: !!saved.layerOn, minSlope: saved.minSlope || 30, opacity: saved.opacity || 0.7,
+  brush: 3, zoneKey: 'default', zoneName: '', zoneLink: DEFAULT_LINK, centerName: '', ver: 1
 };
-const persist = () => W.store.set(STORE, {url:S.url, follow:S.follow, region:S.region, layerPref:S.layerPref, minSlope:S.minSlope, opacity:S.opacity});
+const persist = () => W.store.set(STORE, {zones:S.zones, layerOn:S.layerOn, minSlope:S.minSlope, opacity:S.opacity});
 
-/* ---------- helpers ---------- */
-const levelOf = v => Math.ceil((v || 0) / 2);             /* 0-10 rose value -> 0-5 danger level */
-const isPockets = v => v > 0 && v % 2 === 1;
-const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 const dayKey = d => new Intl.DateTimeFormat('en-CA', {timeZone:'America/Denver', year:'numeric', month:'2-digit', day:'2-digit'}).format(d);
-function region(){ const r = S.data && S.data.regions && S.data.regions[S.region]; return r && r.available ? r : null; }
-function isToday(r){ return !!(r && r.issued_ts && dayKey(new Date(r.issued_ts * 1000)) === dayKey(new Date())); }
+const fmtWhen = ms => new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}).format(new Date(ms));
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 function el(tag, cls, text){ const e = document.createElement(tag); if(cls) e.className = cls; if(text != null) e.textContent = text; return e; }
 function btn(text, cls){ const b = el('button', 'btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; return b; }
+function entry(){ return S.zones[S.zoneKey] || null; }
+function rose(){ const e = entry(); return e && Array.isArray(e.rose) && e.rose.length === 24 ? e.rose : new Array(24).fill(0); }
+function hasAny(){ return rose().some(v => v > 0); }
+function isToday(){ const e = entry(); return !!(e && e.enteredAt && dayKey(new Date(e.enteredAt)) === dayKey(new Date())); }
 
-/* ---------- terrain layer: steep slopes colored by the forecast danger for their aspect and band ---------- */
+/* ---------- terrain layer ---------- */
 const COLORS = [0,1,2,3,4,5].map(l => hexRgb(W.DANGER[l].bg));
 function renderDanger(tile, z, y){
-  const {w, h, elev} = tile, out = new Uint8ClampedArray(w*h*4), r0 = region();
-  if(!r0 || !S.on) return out;
-  const rose = r0.rose, n2 = Math.pow(2, z), minS = S.minSlope;
+  const {w, h, elev} = tile, out = new Uint8ClampedArray(w*h*4);
+  if(!S.layerOn || !hasAny()) return out;
+  const r0 = rose(), n2 = Math.pow(2, z), minS = S.minSlope;
   const lowM = W.state.bandLow / W.FT, highM = W.state.bandHigh / W.FT;
   for(let r = 0; r < h; r++){
     const lat = Math.atan(Math.sinh(Math.PI - 2*Math.PI*(y + (r+0.5)/h)/n2))*180/Math.PI;
@@ -1534,13 +1533,10 @@ function renderDanger(tile, z, y){
     for(let c = 0; c < w; c++){
       const cl = c > 0 ? c-1 : c, cr = c < w-1 ? c+1 : c, i = r*w + c;
       const dzdx = (elev[r*w+cr] - elev[r*w+cl])/((cr-cl)*pix), dzdn = (elev[ru*w+c] - elev[rd*w+c])/dyN;
-      const slope = Math.atan(Math.hypot(dzdx, dzdn))*57.29578;
-      if(slope < minS) continue;
+      if(Math.atan(Math.hypot(dzdx, dzdn))*57.29578 < minS) continue;
       const ai = Math.floor((((Math.atan2(-dzdx, -dzdn)*57.29578 + 360) % 360) + 22.5) % 360 / 45);
-      const e = elev[i], bi = e >= highM ? 0 : e >= lowM ? 1 : 2;
-      const v = rose[bi*8 + ai], lvl = levelOf(v);
+      const e = elev[i], bi = e >= highM ? 0 : e >= lowM ? 1 : 2, lvl = r0[bi*8 + ai];
       if(!lvl) continue;
-      if(isPockets(v) && ((c + r) % 8) >= 4) continue;      /* "pockets of" levels are striped */
       const col = COLORS[lvl], o = i*4;
       out[o] = col[0]; out[o+1] = col[1]; out[o+2] = col[2]; out[o+3] = 235;
     }
@@ -1553,14 +1549,14 @@ async function encodePng(rgba, w, h){
   const blob = c.convertToBlob ? await c.convertToBlob({type:'image/png'}) : await new Promise(res => c.toBlob(res, 'image/png'));
   return blob.arrayBuffer();
 }
-W.maplibregl.addProtocol('wbpuac', async (params) => {
-  const m = params.url.match(/^wbpuac:\/\/(\w+)\/(\d+)\/(\d+)\/(\d+)/);
-  if(!m) throw new Error('Bad forecast tile URL');
+W.maplibregl.addProtocol('wbprose', async (params) => {
+  const m = params.url.match(/^wbprose:\/\/(\w+)\/(\d+)\/(\d+)\/(\d+)/);
+  if(!m) throw new Error('Bad rose tile URL');
   const [, demId, z, x, y] = m;
   const tile = await W.loadDem(demId, +z, +x, +y);
   return {data: await encodePng(renderDanger(tile, +z, +y), tile.w, tile.h)};
 });
-const tileUrl = () => `wbpuac://${W.state.dem}/{z}/{x}/{y}?v=${S.ver}&r=${S.region}`;
+const tileUrl = () => `wbprose://${W.state.dem}/{z}/{x}/{y}?v=${S.ver}`;
 function beforeId(){
   for(const id of ['route-casing', 'route-line', 'route-pts']) if(map.getLayer(id)) return id;
   const l = map.getStyle().layers.find(l => l.type === 'symbol'); return l ? l.id : undefined;
@@ -1568,238 +1564,208 @@ function beforeId(){
 let srcDem = null;
 function addLayer(){
   const d = W.DEMS[W.state.dem];
-  if(map.getSource('uac-danger') && srcDem !== W.state.dem){ if(map.getLayer('uac-danger')) map.removeLayer('uac-danger'); map.removeSource('uac-danger'); }
-  if(!map.getSource('uac-danger')){ map.addSource('uac-danger', {type:'raster', tiles:[tileUrl()], tileSize:d.tileSize, maxzoom:d.analysisMax, attribution:'Avalanche forecast: Utah Avalanche Center'}); srcDem = W.state.dem; }
-  if(!map.getLayer('uac-danger')) map.addLayer({id:'uac-danger', type:'raster', source:'uac-danger', minzoom:10.5,
-    layout:{visibility:S.on ? 'visible' : 'none'}, paint:{'raster-opacity':S.opacity, 'raster-fade-duration':0}}, beforeId());
+  if(map.getSource('my-rose') && srcDem !== W.state.dem){ if(map.getLayer('my-rose')) map.removeLayer('my-rose'); map.removeSource('my-rose'); }
+  if(!map.getSource('my-rose')){ map.addSource('my-rose', {type:'raster', tiles:[tileUrl()], tileSize:d.tileSize, maxzoom:d.analysisMax}); srcDem = W.state.dem; }
+  if(!map.getLayer('my-rose')) map.addLayer({id:'my-rose', type:'raster', source:'my-rose', minzoom:10.5,
+    layout:{visibility:S.layerOn ? 'visible' : 'none'}, paint:{'raster-opacity':S.opacity, 'raster-fade-duration':0}}, beforeId());
 }
 W.whenStyle(addLayer);
+let refreshT;
 function refreshTiles(){
-  S.ver++;
-  const src = map.getSource('uac-danger');
-  if(src && typeof src.setTiles === 'function') src.setTiles([tileUrl()]);
-  else if(src){ if(map.getLayer('uac-danger')) map.removeLayer('uac-danger'); map.removeSource('uac-danger'); addLayer(); }
-  if(map.getLayer('uac-danger')) map.setLayoutProperty('uac-danger', 'visibility', S.on ? 'visible' : 'none');
+  clearTimeout(refreshT);
+  refreshT = setTimeout(() => {
+    S.ver++;
+    const src = map.getSource('my-rose');
+    if(src && typeof src.setTiles === 'function') src.setTiles([tileUrl()]);
+    else if(src){ if(map.getLayer('my-rose')) map.removeLayer('my-rose'); map.removeSource('my-rose'); addLayer(); }
+    if(map.getLayer('my-rose')) map.setLayoutProperty('my-rose', 'visibility', S.layerOn ? 'visible' : 'none');
+  }, 120);
 }
-/* Band boundaries live in the core Terrain analysis inputs; re-render when they change. */
-['bandLow', 'bandHigh'].forEach(id => { const n = document.getElementById(id); if(n) n.addEventListener('change', () => { if(S.on) refreshTiles(); }); });
+['bandLow', 'bandHigh'].forEach(id => { const n = document.getElementById(id); if(n) n.addEventListener('change', () => { if(S.layerOn) refreshTiles(); }); });
 
 /* ---------- panel ---------- */
 const css = document.createElement('style');
 css.textContent = `
-.uac-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.uac-head select{flex:1;min-width:0}
-.uac-status{font-size:12px;color:var(--muted)}
-.uac-stale{font-size:12.5px;color:var(--problem);font-weight:600}
-.uac-top{display:grid;grid-template-columns:116px 1fr;gap:12px;align-items:center}
-.uac-rose{width:116px;height:116px;display:block}
-.uac-rose path{stroke:var(--surface);stroke-width:1.5}
-.uac-rose text{font:600 19px var(--font-ui);fill:var(--muted);text-anchor:middle;dominant-baseline:middle}
-.uac-bands{display:grid;gap:5px}
-.uac-band{display:grid;grid-template-columns:44px 1fr;gap:8px;align-items:center;font-size:12.5px}
-.uac-band small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
-.uac-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:650;font-size:12px;border:1px solid rgba(0,0,0,.15)}
-.uac-bl{margin:0;font-size:13.5px;line-height:1.5}
-.uac-prob{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:start;padding-top:10px;border-top:1px solid var(--line)}
-.uac-prob .uac-rose{width:64px;height:64px}
-.uac-prob b{display:block;font-size:13.5px;margin-bottom:4px}
-.uac-prob p,.uac-more p{margin:6px 0 0;font-size:13px;line-height:1.5;white-space:pre-line}
-.uac-prob details summary,.uac-more summary{cursor:pointer;font-size:12.5px;color:var(--accent)}
-.uac-src{display:grid;gap:8px}
-#uacforecast [hidden]{display:none!important}
+.mr-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.mr-head h2{margin:0}
+.mr-you{display:inline-block;margin-top:5px;font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:20px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.mr-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:5px 10px;white-space:nowrap;background:var(--surface-2)}
+.mr-link:hover{border-color:var(--accent)}
+.mr-tag{font-size:12px;color:var(--muted);line-height:1.45;margin:0}
+.mr-tag b{color:var(--fg)}
+.mr-stale{font-size:12.5px;color:var(--problem);font-weight:600;margin:0}
+.mr-palette{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.mr-palette button{display:flex;align-items:center;gap:6px;justify-content:flex-start;padding:6px 8px;font-size:12.5px;min-width:0;white-space:nowrap}
+.mr-palette i{width:14px;height:14px;border-radius:4px;flex:none;border:1px solid rgba(0,0,0,.18)}
+.mr-palette button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.mr-main{display:grid;grid-template-columns:172px 1fr;gap:12px;align-items:center}
+.mr-rose{width:172px;height:172px;display:block;touch-action:none;user-select:none}
+.mr-rose path{stroke:var(--surface);stroke-width:1.5;cursor:pointer}
+.mr-rose path:hover{stroke:var(--fg);stroke-width:2}
+.mr-rose path:focus-visible{outline:none;stroke:var(--accent);stroke-width:3}
+.mr-rose text{font:600 17px var(--font-ui);fill:var(--muted);text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.mr-bands{display:grid;gap:6px}
+.mr-band{display:grid;grid-template-columns:44px 1fr;gap:6px;align-items:center;font-size:12px}
+.mr-band small{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+.mr-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:650;font-size:11.5px;border:1px solid rgba(0,0,0,.15)}
+.mr-fills{display:flex;flex-wrap:wrap;gap:6px}
+#myrose [hidden]{display:none!important}
 `;
 document.head.append(css);
 
-const sec = W.addSection('uacforecast', 'UAC forecast');
-/* Place the section right after the core "Avalanche forecast" section. */
+const sec = W.addSection('myrose', 'My danger rose');
 const avySec = document.getElementById('h-avy') && document.getElementById('h-avy').closest('section');
 if(avySec && avySec.nextElementSibling) avySec.parentElement.insertBefore(sec, avySec.nextElementSibling);
+/* Header row: title on the left, the official forecast link right beside it. */
+const h2 = sec.querySelector('h2');
+const head = el('div', 'mr-head'); sec.insertBefore(head, h2);
+const titleBox = el('div'); titleBox.append(h2, el('span', 'mr-you', 'You fill this in')); head.append(titleBox);
+const link = el('a', 'mr-link'); link.target = '_blank'; link.rel = 'noopener'; head.append(link);
 
-const head = el('div', 'uac-head');
-const regionSel = el('select'); regionSel.id = 'uac-region'; regionSel.setAttribute('aria-label', 'Forecast region');
-const refreshBtn = btn('Refresh', 'icon');
-head.append(regionSel, refreshBtn);
-const followLbl = el('label', 'switch'); const followIn = el('input'); followIn.type = 'checkbox'; followIn.id = 'uac-follow'; followIn.checked = S.follow;
-followLbl.append(el('span', null, 'Follow the map center'), followIn);
-const status = el('div', 'uac-status', 'Loading the UAC forecast…');
-const stale = el('div', 'uac-stale'); stale.hidden = true;
-const body = el('div'); body.style.display = 'grid'; body.style.gap = '10px';
-const layerLbl = el('label', 'switch'); const layerIn = el('input'); layerIn.type = 'checkbox'; layerIn.id = 'uac-layer';
-layerLbl.append(el('span', null, 'Color steep terrain by today\'s danger'), layerIn);
-const layerOpts = el('div'); layerOpts.style.display = 'grid'; layerOpts.style.gridTemplateColumns = '1fr 1fr'; layerOpts.style.gap = '8px';
-const minLbl = el('label', 'field', 'Min slope °'); const minIn = el('input'); minIn.type = 'number'; minIn.min = 20; minIn.max = 45; minIn.step = 1; minIn.value = S.minSlope; minIn.id = 'uac-min'; minLbl.append(minIn);
-const opLbl = el('label', 'field', 'Opacity'); const opIn = el('input'); opIn.type = 'range'; opIn.min = 0.2; opIn.max = 1; opIn.step = 0.05; opIn.value = S.opacity; opIn.id = 'uac-op'; opLbl.append(opIn);
-layerOpts.append(minLbl, opLbl);
-const layerNote = el('p', 'note', ''); layerNote.style.margin = '0';
-const src = el('details', 'uac-more');
-src.append(el('summary', null, 'Forecast data source'));
-const srcBox = el('div', 'uac-src');
-const srcNote = el('p', 'note', 'Hosted on GitHub Pages with the "UAC forecast" Action, this updates by itself each morning. Opened as a local file, paste the raw GitHub address of data/uac/latest.json from your repository, or load the file.');
-srcNote.style.margin = '6px 0 0';
-const urlLbl = el('label', 'field', 'Forecast file address'); const urlIn = el('input'); urlIn.type = 'text'; urlIn.id = 'uac-url'; urlIn.value = S.url; urlIn.placeholder = DEFAULT_URL; urlLbl.append(urlIn);
-const srcRow = el('div', 'row'); const urlSave = btn('Use this address'); const fileBtn = btn('Load a forecast file');
-const fileIn = el('input'); fileIn.type = 'file'; fileIn.accept = '.json,application/json'; fileIn.hidden = true; fileIn.id = 'uac-file';
-srcRow.append(urlSave, fileBtn, fileIn);
-srcBox.append(srcNote, urlLbl, srcRow); src.append(srcBox);
-sec.append(head, followLbl, status, stale, body, layerLbl, layerOpts, layerNote, src);
-
-/* ---------- roses ---------- */
+const tag = el('p', 'mr-tag');
+const stale = el('p', 'mr-stale'); stale.hidden = true;
+const palette = el('div', 'mr-palette'); palette.setAttribute('role', 'group'); palette.setAttribute('aria-label', 'Danger level to paint');
+const brushBtns = [];
+[...LEVELS, 0].forEach(l => {
+  const b = btn(l ? W.DANGER[l].label : 'Clear cell'); const sw = el('i'); sw.style.background = l ? W.DANGER[l].bg : 'transparent';
+  if(!l) sw.style.borderStyle = 'dashed';
+  b.prepend(sw); b.dataset.level = l; b.setAttribute('aria-pressed', String(l === S.brush));
+  b.onclick = () => { S.brush = l; brushBtns.forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.level === l))); };
+  brushBtns.push(b); palette.append(b);
+});
+const main = el('div', 'mr-main');
 const NS = 'http://www.w3.org/2000/svg';
+const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'mr-rose'); svg.setAttribute('viewBox', '-118 -118 236 236');
+svg.setAttribute('role', 'group'); svg.setAttribute('aria-label', 'Your danger rose: tap or drag across cells to paint the selected level');
+const bands = el('div', 'mr-bands');
+main.append(svg, bands);
+const fills = el('div', 'mr-fills');
+const fillBtns = BAND_NAMES.map((n, b) => { const x = btn(`Fill ${n.toLowerCase()}`, 'icon'); x.onclick = () => setCells(i => Math.floor(i/8) === b); return x; });
+const fillAll = btn('Fill all', 'icon'); fillAll.onclick = () => setCells(() => true);
+const clearAll = btn('Clear rose', 'icon'); let clearArmed = false;
+clearAll.onclick = () => {
+  if(!clearArmed){ clearArmed = true; clearAll.textContent = 'Confirm clear'; setTimeout(() => { clearArmed = false; clearAll.textContent = 'Clear rose'; }, 3000); return; }
+  clearArmed = false; clearAll.textContent = 'Clear rose'; delete S.zones[S.zoneKey]; persist(); render(); refreshTiles();
+};
+fills.append(...fillBtns, fillAll, clearAll);
+const layerLbl = el('label', 'switch'); const layerIn = el('input'); layerIn.type = 'checkbox'; layerIn.id = 'myrose-layer';
+layerLbl.append(el('span', null, 'Color steep terrain by my rose'), layerIn);
+const opts = el('div'); opts.style.display = 'grid'; opts.style.gridTemplateColumns = '1fr 1fr'; opts.style.gap = '8px';
+const minLbl = el('label', 'field', 'Min slope °'); const minIn = el('input'); minIn.type = 'number'; minIn.min = 20; minIn.max = 45; minIn.value = S.minSlope; minIn.id = 'myrose-min'; minLbl.append(minIn);
+const opLbl = el('label', 'field', 'Opacity'); const opIn = el('input'); opIn.type = 'range'; opIn.min = 0.2; opIn.max = 1; opIn.step = 0.05; opIn.value = S.opacity; opIn.id = 'myrose-op'; opLbl.append(opIn);
+opts.append(minLbl, opLbl);
+const note = el('p', 'note'); note.style.margin = '0';
+sec.append(tag, stale, palette, main, fills, layerLbl, opts, note);
+
+/* ---------- rose drawing and painting ---------- */
 function sector(r1, r2, a1, a2){
   const p = (r, a) => { const t = a*Math.PI/180; return [(r*Math.sin(t)).toFixed(2), (-r*Math.cos(t)).toFixed(2)]; };
   const [x1,y1] = p(r2,a1), [x2,y2] = p(r2,a2), [x3,y3] = p(r1,a2), [x4,y4] = p(r1,a1);
   return `M${x1} ${y1}A${r2} ${r2} 0 0 1 ${x2} ${y2}L${x3} ${y3}A${r1} ${r1} 0 0 0 ${x4} ${y4}Z`;
 }
-let patId = 0;
-function roseSvg(fillFor, label, withLetters){
-  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'uac-rose'); svg.setAttribute('viewBox', withLetters ? '-118 -118 236 236' : '-104 -104 208 208');
-  svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', label);
-  const defs = document.createElementNS(NS, 'defs'); svg.append(defs);
-  const radii = [[10,40],[40,70],[70,100]];
-  for(let b = 0; b < 3; b++) for(let a = 0; a < 8; a++){
-    const path = document.createElementNS(NS, 'path'); path.setAttribute('d', sector(radii[b][0], radii[b][1], a*45-22.5, a*45+22.5));
-    const f = fillFor(b*8 + a);
-    if(f.stripes){
-      const id = 'uacpat' + (++patId), pat = document.createElementNS(NS, 'pattern');
-      pat.setAttribute('id', id); pat.setAttribute('width', '8'); pat.setAttribute('height', '8'); pat.setAttribute('patternUnits', 'userSpaceOnUse'); pat.setAttribute('patternTransform', 'rotate(45)');
-      const bg = document.createElementNS(NS, 'rect'); bg.setAttribute('width', '8'); bg.setAttribute('height', '8'); bg.setAttribute('fill', f.base);
-      const st = document.createElementNS(NS, 'rect'); st.setAttribute('width', '4'); st.setAttribute('height', '8'); st.setAttribute('fill', f.fill);
-      pat.append(bg, st); defs.append(pat); path.setAttribute('fill', `url(#${id})`);
-    } else path.setAttribute('fill', f.fill);
-    const t = document.createElementNS(NS, 'title'); t.textContent = `${ASP[a]}, ${BAND_NAMES[b].toLowerCase()} elevations: ${f.title}`; path.append(t);
-    svg.append(path);
-  }
-  if(withLetters) ASP.forEach((a, i) => { if(i % 2) return; const t = document.createElementNS(NS, 'text'), ang = i*45*Math.PI/180;
-    t.setAttribute('x', (111*Math.sin(ang)).toFixed(1)); t.setAttribute('y', (-111*Math.cos(ang)).toFixed(1)); t.textContent = a; svg.append(t); });
-  return svg;
+const cells = [];
+const radii = [[10,40],[40,70],[70,100]];
+for(let b = 0; b < 3; b++) for(let a = 0; a < 8; a++){
+  const i = b*8 + a, p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', sector(radii[b][0], radii[b][1], a*45-22.5, a*45+22.5));
+  p.dataset.i = i; p.setAttribute('tabindex', '0'); p.setAttribute('role', 'button');
+  p.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); paint(i, true); } });
+  cells.push(p); svg.append(p);
 }
-const surface2 = () => W.cssVar('--surface-2') || '#eef2f7';
-const dangerFill = rose => i => { const v = rose[i], l = levelOf(v);
-  return {fill: W.DANGER[l].bg, base: surface2(), stripes: isPockets(v), title: WORDS[v] || 'No rating'}; };
-const whereFill = where => i => (where && where[i]) ? {fill: W.cssVar('--problem') || '#d6336c', title:'problem present'} : {fill: surface2(), title:'not listed'};
+['N','E','S','W'].forEach((t, k) => { const tx = document.createElementNS(NS, 'text'), ang = k*90*Math.PI/180;
+  tx.setAttribute('x', (110*Math.sin(ang)).toFixed(1)); tx.setAttribute('y', (-110*Math.cos(ang)).toFixed(1)); tx.textContent = t; svg.append(tx); });
+
+let painting = false, toggleClear = false;
+function ensureEntry(){
+  if(!S.zones[S.zoneKey]) S.zones[S.zoneKey] = {rose:new Array(24).fill(0)};
+  const e = S.zones[S.zoneKey]; e.zoneName = S.zoneName; e.link = S.zoneLink; return e;
+}
+function paint(i, single){
+  const e = ensureEntry(), cur = e.rose[i];
+  /* A single tap on a cell that already has this level clears it; a drag always paints. */
+  const val = (single && cur === S.brush) ? 0 : S.brush;
+  if(cur === val) return;
+  e.rose[i] = val; e.enteredAt = Date.now();
+  touched();
+}
+function setCells(pred){
+  const e = ensureEntry(); e.rose = e.rose.map((v, i) => pred(i) ? S.brush : v); e.enteredAt = Date.now(); touched();
+}
+function touched(){ persist(); render(); refreshTiles(); }
+function cellAt(x, y){ const t = document.elementFromPoint(x, y); return t && t.dataset && t.dataset.i != null && svg.contains(t) ? +t.dataset.i : null; }
+svg.addEventListener('pointerdown', e => {
+  const i = cellAt(e.clientX, e.clientY); if(i == null) return;
+  e.preventDefault(); painting = true; svg.setPointerCapture && svg.setPointerCapture(e.pointerId);
+  const cur = rose()[i]; toggleClear = cur === S.brush;
+  paint(i, true);
+});
+svg.addEventListener('pointermove', e => {
+  if(!painting) return;
+  const i = cellAt(e.clientX, e.clientY); if(i == null) return;
+  if(toggleClear){ const en = ensureEntry(); if(en.rose[i] === S.brush){ en.rose[i] = 0; en.enteredAt = Date.now(); touched(); } }
+  else paint(i, false);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(t => svg.addEventListener(t, () => { painting = false; }));
 
 /* ---------- render ---------- */
-function bandSummary(rose){
-  const box = el('div', 'uac-bands');
-  for(let b = 0; b < 3; b++){
-    const vals = rose.slice(b*8, b*8+8), max = Math.max(...vals), lvl = levelOf(max);
-    const row = el('div', 'uac-band'); row.append(el('small', null, BAND_NAMES[b]));
-    const pill = el('span', 'uac-pill', WORDS[max] || 'No rating'); pill.style.background = W.DANGER[lvl].bg; pill.style.color = W.DANGER[lvl].fg;
-    const wrap = el('div'); wrap.append(pill); row.append(wrap); box.append(row);
-  }
-  return box;
-}
 function render(){
-  const data = S.data, regions = data && data.regions ? data.regions : {};
-  /* region list */
-  const slugs = Object.keys(regions);
-  regionSel.textContent = '';
-  (slugs.length ? slugs : [S.region]).forEach(s => { const nm = (regions[s] && regions[s].region) || s.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()); const o = el('option', null, nm + (regions[s] && !regions[s].available ? ' (no forecast)' : '')); o.value = s; regionSel.append(o); });
-  regionSel.value = S.region;
-  body.textContent = '';
-  const r0 = region();
-  if(!data){ status.textContent = S.error || 'Loading the UAC forecast…'; stale.hidden = true; layerIn.disabled = true; return; }
-  const entry = regions[S.region];
-  status.textContent = '';
-  if(!entry){ status.textContent = `No ${S.region.replace(/-/g,' ')} forecast in this file.`; stale.hidden = true; layerIn.disabled = true; refreshTiles(); return; }
-  if(!r0){ status.textContent = `${entry.region || S.region}: ${entry.reason || 'no forecast issued'}.`; stale.hidden = true; layerIn.disabled = true; refreshTiles(); return; }
-  layerIn.disabled = false;
-  const today = isToday(r0);
-  status.append(`Issued ${r0.issued || 'date unknown'} · `);
-  const a = el('a', null, 'Full forecast on utahavalanchecenter.org'); a.href = r0.url; a.target = '_blank'; a.rel = 'noopener'; status.append(a);
-  stale.hidden = today;
-  stale.textContent = today ? '' : 'This is not today\'s forecast. Check UAC for the current one before you go.';
-  const top = el('div', 'uac-top');
-  top.append(roseSvg(dangerFill(r0.rose), `Overall danger rose for ${r0.region}`, true), bandSummary(r0.rose));
-  body.append(top);
-  if(r0.bottom_line){ const bl = el('p', 'uac-bl', r0.bottom_line); body.append(bl); }
-  (r0.problems || []).forEach((p, idx) => {
-    const box = el('div', 'uac-prob');
-    box.append(roseSvg(whereFill(p.where), `Where ${p.name} is most likely`, false));
-    const txt = el('div'); txt.append(el('b', null, `Problem ${idx+1}: ${p.name}`));
-    const show = btn('Show where on the map', 'icon'); show.disabled = !p.where;
-    show.onclick = () => showProblems([p]);
-    txt.append(show);
-    if(p.description){ const d = el('details'); d.append(el('summary', null, 'Read the description'), el('p', null, p.description)); txt.append(d); }
-    box.append(txt); body.append(box);
+  const r0 = rose(), e = entry(), any = hasAny(), today = isToday();
+  const surface2 = W.cssVar('--surface-2') || '#eef2f7';
+  cells.forEach((p, i) => {
+    const l = r0[i]; p.setAttribute('fill', l ? W.DANGER[l].bg : surface2);
+    p.setAttribute('aria-label', `${ASP[i % 8]}, ${BAND_NAMES[Math.floor(i/8)].toLowerCase()} elevations: ${l ? W.DANGER[l].label : 'not set'}`);
   });
-  if((r0.problems || []).length > 1){ const all = btn('Show all problems on the map'); all.onclick = () => showProblems(r0.problems); body.append(all); }
-  [['Recent activity', r0.recent_activity], ['Current conditions', r0.current_conditions]].forEach(([t, v]) => {
-    if(!v) return; const d = el('details', 'uac-more'); d.append(el('summary', null, t), el('p', null, v)); body.append(d); });
-  /* layer default: on for today's forecast unless the viewer turned it off */
-  if(S.layerPref === undefined) setLayer(today, true); else setLayer(S.layerPref && true, true);
-  layerNote.textContent = (today ? '' : 'Old forecast: treat these colors as out of date. ') +
-    `Slopes at or above the minimum angle take the danger for their aspect and elevation band (bands split at ${W.state.bandLow.toLocaleString('en-US')} and ${W.state.bandHigh.toLocaleString('en-US')} ft, set under Terrain analysis; check them against the elevations on the UAC rose). Striped colors are "pockets of" ratings.`;
-  refreshTiles();
-}
-function setLayer(on, quiet){
-  S.on = !!on && !!region(); layerIn.checked = S.on; layerOpts.hidden = !S.on; layerNote.hidden = !S.on;
-  if(!quiet){ S.layerPref = !!on; persist(); }
-  if(S.on && W.state.mode === 'slope' && !quiet){ W.setMode('off'); W.toast('Slope shading is off so the forecast colors read clearly. Turn it back on under Terrain analysis.'); }
-  refreshTiles();
-}
-function showProblems(list){
-  const keys = [];
-  list.forEach(p => (p.where || []).forEach((on, i) => { if(on) keys.push(BAND_KEYS[Math.floor(i/8)] + '-' + (i % 8)); }));
-  W.setRose([...new Set(keys)]); W.setMode('problem');
-  if(S.on){ setLayer(false); }
-  W.toast(`Showing ${list.map(p => p.name).join(', ')} on slopes of ${W.state.minSlope}° or more. Adjust under Terrain analysis.`);
+  bands.textContent = '';
+  for(let b = 0; b < 3; b++){
+    const max = Math.max(...r0.slice(b*8, b*8+8)), row = el('div', 'mr-band');
+    row.append(el('small', null, BAND_NAMES[b]));
+    const wrap = el('div');
+    if(max){ const pill = el('span', 'mr-pill', W.DANGER[max].label); pill.style.background = W.DANGER[max].bg; pill.style.color = W.DANGER[max].fg; wrap.append(pill); }
+    else wrap.append(el('span', 'muted', 'not set'));
+    row.append(wrap); bands.append(row);
+  }
+  link.textContent = `Open ${S.centerName ? S.centerName + ' ' : ''}forecast ↗`;
+  link.href = S.zoneLink || DEFAULT_LINK;
+  link.setAttribute('aria-label', `Open today's official avalanche forecast${S.zoneName ? ' for ' + S.zoneName : ''} in a new tab`);
+  tag.textContent = '';
+  if(any && e.enteredAt){
+    tag.append('You entered this rose', S.zoneName ? ` for ${S.zoneName}` : '', ' on ');
+    tag.append(el('b', null, fmtWhen(e.enteredAt)));
+    tag.append('. It is not an official forecast: the map only shows what you typed in.');
+  } else {
+    tag.append('Copy today\'s danger rose here from the official forecast. Pick a level, then tap or drag across the rose. The map can then color steep terrain from it. ', el('b', null, 'This is your own entry, not an official forecast.'));
+  }
+  stale.hidden = !(any && !today);
+  stale.textContent = 'This rose is from an earlier day. Update it from today\'s forecast before you rely on it.';
+  layerIn.checked = S.layerOn; layerIn.disabled = !any;
+  opts.hidden = !S.layerOn; note.hidden = !S.layerOn;
+  note.textContent = `Slopes at or above ${S.minSlope}° take the level you set for their aspect and elevation band. Bands split at ${W.state.bandLow.toLocaleString('en-US')} and ${W.state.bandHigh.toLocaleString('en-US')} ft (set under Terrain analysis); match them to the elevations printed on your forecast's rose.`;
 }
 
-/* ---------- loading ---------- */
-function regionForCenter(){
+/* ---------- zone and forecast link from the map center ---------- */
+function updateZone(){
   const c = map.getCenter(), z = W.zoneAt(c.lng, c.lat);
-  if(!z || String(z.center_id || '').toUpperCase() !== 'UAC' || !z.name) return null;
-  return String(z.name).trim().toLowerCase().replace(/\s+/g, '-');
+  const key = z ? `${z.center_id || 'zone'}:${z.name || ''}` : 'default';
+  const changed = key !== S.zoneKey;
+  S.zoneKey = key; S.zoneName = z && z.name ? String(z.name) : ''; S.centerName = z && z.center_id ? String(z.center_id) : '';
+  S.zoneLink = (z && typeof z.link === 'string' && /^https?:\/\//.test(z.link)) ? z.link : DEFAULT_LINK;
+  render();
+  if(changed && S.layerOn) refreshTiles();
 }
-function followMap(){
-  if(!S.follow) return;
-  const slug = regionForCenter();
-  if(slug && slug !== S.region && (!S.data || (S.data.regions && S.data.regions[slug]))){ S.region = slug; persist(); render(); }
-}
-function accept(data, sourceLabel){
-  if(!data || typeof data !== 'object' || !data.regions) throw new Error('This file is not a UAC forecast file from fetch_uac.py.');
-  S.data = data; S.source = sourceLabel; S.loadedAt = new Date(); S.error = '';
-  W.store.set(STORE + '.cache', {data, source:sourceLabel, at:Date.now()});
-  followMap(); render();
-}
-async function load(){
-  refreshBtn.disabled = true;
-  try{
-    const url = S.url + (S.url.includes('?') ? '&' : '?') + 't=' + Math.floor(Date.now()/60000);
-    const r = await fetch(url, {cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    accept(await r.json(), S.url);
-  }catch(e){
-    const cached = W.store.get(STORE + '.cache', null);
-    const local = location.protocol === 'file:' && !/^https?:/i.test(S.url);
-    S.error = local ? 'Opened as a local file, the map can\'t read the forecast file by itself. Open "Forecast data source" below to add its address or load it.'
-                    : `The forecast file did not load (${e.message}). Check its address under "Forecast data source".`;
-    if(cached && cached.data){ S.data = cached.data; S.source = cached.source; render(); status.textContent = 'Showing the last forecast this browser loaded. ' + S.error; }
-    else { S.data = null; render(); }
-  }finally{ refreshBtn.disabled = false; }
-}
+let moveT; map.on('moveend', () => { clearTimeout(moveT); moveT = setTimeout(updateZone, 250); });
 
-/* ---------- events ---------- */
-regionSel.onchange = () => { S.region = regionSel.value; S.follow = false; followIn.checked = false; persist(); render(); };
-followIn.onchange = () => { S.follow = followIn.checked; persist(); followMap(); };
-refreshBtn.onclick = load;
-layerIn.onchange = () => setLayer(layerIn.checked);
-minIn.onchange = () => { const v = Math.min(45, Math.max(20, Math.round(+minIn.value || 30))); minIn.value = v; S.minSlope = v; persist(); refreshTiles(); };
-opIn.oninput = () => { S.opacity = +opIn.value; persist(); if(map.getLayer('uac-danger')) map.setPaintProperty('uac-danger', 'raster-opacity', S.opacity); };
-urlSave.onclick = () => { S.url = urlIn.value.trim() || DEFAULT_URL; urlIn.value = S.url; persist(); load(); };
-fileBtn.onclick = () => fileIn.click();
-fileIn.onchange = async () => { const f = fileIn.files[0]; if(!f) return;
-  try{ accept(JSON.parse(await f.text()), f.name); W.toast('Loaded the forecast from ' + f.name); }
-  catch(e){ W.toast(e.message || 'That file could not be read.'); } fileIn.value = ''; };
-let moveT; map.on('moveend', () => { clearTimeout(moveT); moveT = setTimeout(followMap, 300); });
-setInterval(() => { if(document.visibilityState === 'visible') load(); }, 20*60*1000);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && S.loadedAt && Date.now() - S.loadedAt > 10*60*1000) load(); });
+/* ---------- controls ---------- */
+layerIn.onchange = () => {
+  S.layerOn = layerIn.checked; persist(); render(); refreshTiles();
+  if(S.layerOn && W.state.mode === 'slope'){ W.setMode('off'); W.toast('Slope shading is off so your rose colors read clearly. Turn it back on under Terrain analysis.'); }
+};
+minIn.onchange = () => { const v = Math.min(45, Math.max(20, Math.round(+minIn.value || 30))); minIn.value = v; S.minSlope = v; persist(); render(); refreshTiles(); };
+opIn.oninput = () => { S.opacity = +opIn.value; persist(); if(map.getLayer('my-rose')) map.setPaintProperty('my-rose', 'raster-opacity', S.opacity); };
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 
 render();
-load();
-/* The avalanche.org zones arrive a moment after load; re-check which region the map is in. */
-setTimeout(followMap, 4000);
+/* Forecast zones arrive from avalanche.org a moment after load. */
+setTimeout(updateZone, 1500); setTimeout(updateZone, 5000);
 })();
 
 </script>
