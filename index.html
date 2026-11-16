@@ -821,6 +821,7 @@ $('sheetToggle').onclick = () => { const open = $('panelBody').hidden; $('panelB
 /* ---------- layout ---------- */
 const mq = window.matchMedia('(max-width: 759px)');
 function layout(){
+  if(typeof api.customLayout === 'function'){ api.customLayout(); drawProfile(); return; }
   const panel = $('panel');
   if(mq.matches){ if($('sheetToggle').getAttribute('aria-expanded')!=='true') $('panelBody').hidden = true;
     map.setPadding({left:0, top:0, right:0, bottom: panel.offsetHeight}); }
@@ -840,7 +841,7 @@ function fire(evt){ for(const fn of hooks[evt]) { try{ fn(); }catch(e){ console.
 Object.assign(api, {
   map, state, maplibregl, store, toast, DEMS, DANGER, ASPECTS, FT, MI, EARTH, SLOPE_CLASSES, slopeLUT,
   samplerFor, loadDem, worldPx, hav, bearingOf, pointAt, fmtFt, fmtMi, aspectName, bandOf, cssVar, zoneAt, dangerLevel,
-  fitRoute, applyStyle, refreshAnalysis, stopFly,
+  fitRoute, applyStyle, refreshAnalysis, stopFly, relayout: () => layout(), drawProfile: () => drawProfile(),
   setRoute(r, opts){ stopFly(); setDrawing(false); state.route = r; routeChanged({now:true}); if(opts && opts.fit) fitRoute(); },
   refreshRoute(){ routeChanged({now:true}); },
   setRose(keys){ state.rose = new Set(keys); buildRose(); refreshAnalysis(); },
@@ -3161,6 +3162,287 @@ W.on('profile', () => {
   renderList(); renderLegs();
 });
 renderMarkers(); renderList(); renderLegs();
+})();
+
+</script>
+<!-- module: shell -->
+<script>
+/* Layout "A · Tool rail": an icon rail (bottom tab bar on phones) that opens one panel at a time,
+   quick layer chips and the danger badge over the map, and the route profile docked along the bottom.
+   Runs after every other module so it can sort their panel sections into tabs. */
+(() => {
+'use strict';
+const W = window.wbp; if(!W) return;
+const $ = id => document.getElementById(id);
+const panel = $('panel'), body = $('panelBody');
+if(!panel || !body) return;
+document.documentElement.classList.add('wbp-shell');
+
+const RAIL_W = 76, DRAWER_W = 360, PHONE = window.matchMedia('(max-width: 759px)');
+const saved = W.store.get('wbp.ui', {}) || {};
+const S = { tab: saved.tab || 'forecast', open: saved.open !== false, dockCollapsed: !!saved.dockCollapsed, phoneOpen: false };
+const persist = () => W.store.set('wbp.ui', {tab:S.tab, open:S.open, dockCollapsed:S.dockCollapsed});
+
+/* ---------- icons ---------- */
+const svg = d => `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I = {
+  layers: svg('<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'),
+  forecast: svg('<path d="M12 3l9.5 17h-19L12 3z"/><path d="M12 10v4M12 17v.5"/>'),
+  weather: svg('<path d="M7 17a4 4 0 010-8 5 5 0 019.6-1A3.5 3.5 0 0117 17H7z"/><path d="M9 20v.5M13 20v.5"/>'),
+  route: svg('<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19h6a3 3 0 000-6h-2a3 3 0 010-6h6"/>'),
+  tools: svg('<path d="M3 20l7-12 4 6 2-3 5 9H3z"/>'),
+  trip: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/>'),
+  offline: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
+  about: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>'),
+  more: svg('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
+};
+const TABS = [
+  {id:'layers',   label:'Layers',    title:'Map layers',          icon:I.layers},
+  {id:'forecast', label:'Forecast',  title:'Avalanche forecast',  icon:I.forecast},
+  {id:'weather',  label:'Weather',   title:'Snow and weather',    icon:I.weather},
+  {id:'route',    label:'Route',     title:'Route',               icon:I.route},
+  {id:'tools',    label:'Tools',     title:'Terrain tools',       icon:I.tools,   extra:true},
+  {id:'trip',     label:'Trip plan', title:'Trip plan',           icon:I.trip,    extra:true},
+  {id:'offline',  label:'Offline',   title:'Offline maps and GPS', icon:I.offline, extra:true},
+  {id:'about',    label:'About',     title:'About this map',      icon:I.about,   extra:true, bottom:true},
+];
+const TAB = Object.fromEntries(TABS.map(t => [t.id, t]));
+if(!TAB[S.tab] && S.tab !== 'more') S.tab = 'forecast';
+
+/* ---------- styles ---------- */
+const css = document.createElement('style');
+css.textContent = `
+html.wbp-shell [hidden]{display:none!important}
+html.wbp-shell .tab-off{display:none!important}
+html.wbp-shell .panel-head,html.wbp-shell .sheet-toggle{display:none!important}
+html.wbp-shell .panel{top:0;bottom:0;left:${RAIL_W}px;width:${DRAWER_W}px;border:0;border-right:1px solid var(--line);border-radius:0;box-shadow:none;padding-top:env(safe-area-inset-top,0px)}
+.rail{position:fixed;z-index:7;left:0;top:0;bottom:0;width:${RAIL_W}px;background:#13202e;display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:calc(14px + env(safe-area-inset-top,0px)) 0 calc(12px + env(safe-area-inset-bottom,0px));padding-left:env(safe-area-inset-left,0px)}
+.rail-logo{width:42px;height:42px;border-radius:10px;background:#1f5bd1;color:#fff;display:grid;place-items:center;font:750 14px/1 var(--font-ui);font-stretch:78%;letter-spacing:.02em;margin-bottom:10px}
+.rail-btn{width:64px;min-height:56px;border:0;border-radius:10px;background:transparent;color:#a7b4c4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 10.5px/1.15 var(--font-ui);cursor:pointer;padding:6px 2px}
+.rail-btn:hover{color:#ffffff;background:#1c2b3d}
+.rail-btn[aria-pressed="true"]{background:#2a3d55;color:#ffffff}
+.rail-btn:focus-visible{outline:2px solid #7ea8ff;outline-offset:1px}
+.rail-spacer{flex:1}
+.rail-more{display:none}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.drawer-head h1{margin:0;font-size:19px;font-weight:720;font-stretch:85%;line-height:1.15}
+.drawer-close{width:36px;height:36px;padding:0;font-size:20px;line-height:1}
+.topbar{position:fixed;z-index:6;top:calc(14px + env(safe-area-inset-top,0px));display:flex;flex-wrap:wrap;align-items:center;gap:8px;pointer-events:none}
+.topbar>*{pointer-events:auto}
+.topbar .danger{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:5px 12px 5px 5px;gap:9px;max-width:320px;cursor:pointer}
+.topbar .danger .chip{min-width:34px;height:34px;font-size:16px;border-radius:8px}
+.topbar .danger b{font-size:13px;line-height:1.25}
+.topbar .danger .sub{font-size:11.5px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip-btn{height:34px;padding:0 13px;border-radius:20px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:600 13px var(--font-ui);box-shadow:0 2px 8px rgba(16,30,54,.14);cursor:pointer;white-space:nowrap}
+.chip-btn:hover{border-color:var(--accent)}
+.chip-btn[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.dock{position:fixed;z-index:5;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 16px;display:grid;gap:8px}
+.dock-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 16px}
+.dock-head>b{font-size:15px;font-weight:680;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dock-stats{grid-column:1 / -1;min-width:0}
+.dock .stats{display:flex;flex-wrap:wrap;gap:2px 16px}
+.dock .stat{background:none;padding:0}
+.dock .stat small{display:inline;margin-right:5px}
+.dock .stat .v{display:inline;font-size:13px}
+.dock .stats .note{margin:0}
+.dock-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+html.wbp-shell section h2.dup-h,html.wbp-shell section .dup-h{display:none}
+.dock .profile{height:96px}
+.dock .readout{min-height:16px}
+.route-dock-note{margin:0}
+.more-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.more-nav button{display:flex;align-items:center;gap:10px;justify-content:flex-start;min-height:52px;padding:8px 12px;font-size:14px}
+.drawhint{top:calc(70px + env(safe-area-inset-top,0px))!important}
+@media (max-width:759px){
+  .rail{top:auto;right:0;width:auto;height:calc(62px + env(safe-area-inset-bottom,0px));flex-direction:row;justify-content:space-around;gap:0;
+    padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+  .rail-logo,.rail-spacer,.rail-btn.extra{display:none}
+  .rail-more{display:flex}
+  .rail-btn{flex:1;width:auto;min-height:62px;border-radius:0}
+  html.wbp-shell .panel{top:auto;left:0;right:0;width:auto;bottom:calc(62px + env(safe-area-inset-bottom,0px));max-height:58vh;
+    border-right:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -8px 24px rgba(16,30,54,.18);padding:0 env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)}
+  .topbar{flex-direction:column;align-items:stretch;flex-wrap:nowrap}
+  .topbar .danger{max-width:none}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+  .chips::-webkit-scrollbar{display:none}
+  .drawhint{top:calc(118px + env(safe-area-inset-top,0px))!important}
+}
+`;
+document.head.append(css);
+
+/* ---------- rail ---------- */
+const rail = document.createElement('nav'); rail.className = 'rail'; rail.setAttribute('aria-label', 'Map tools');
+const logo = document.createElement('div'); logo.className = 'rail-logo'; logo.textContent = 'WBP'; logo.title = 'Wasatch Backcountry Planner'; rail.append(logo);
+const railBtns = {};
+function railButton(id, label, icon, cls){
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'rail-btn' + (cls ? ' ' + cls : ''); b.dataset.tab = id;
+  b.innerHTML = icon; b.append(label); b.setAttribute('aria-pressed', 'false');
+  b.onclick = () => onRail(id); railBtns[id] = b; return b;
+}
+TABS.filter(t => !t.bottom).forEach(t => rail.append(railButton(t.id, t.label, t.icon, t.extra ? 'extra' : '')));
+rail.append(railButton('more', 'More', I.more, 'rail-more'));
+const spacer = document.createElement('div'); spacer.className = 'rail-spacer'; rail.append(spacer);
+TABS.filter(t => t.bottom).forEach(t => rail.append(railButton(t.id, t.label, t.icon, 'extra')));
+document.body.append(rail);
+
+/* ---------- drawer header ---------- */
+const head = document.createElement('div'); head.className = 'drawer-head';
+const title = document.createElement('h1'); title.id = 'drawerTitle';
+const close = document.createElement('button'); close.type = 'button'; close.className = 'btn icon drawer-close'; close.setAttribute('aria-label', 'Close panel'); close.textContent = '×';
+close.onclick = () => setOpen(false);
+head.append(title, close);
+panel.insertBefore(head, panel.firstChild);
+panel.setAttribute('aria-labelledby', 'drawerTitle');
+
+/* ---------- "More" (phones): the tabs that don't fit the bottom bar ---------- */
+const moreSec = document.createElement('section'); moreSec.id = 'shell-more'; moreSec.dataset.tab = 'more';
+const moreNav = document.createElement('div'); moreNav.className = 'more-nav';
+TABS.filter(t => t.extra).forEach(t => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.innerHTML = t.icon; b.append(t.label); b.onclick = () => setTab(t.id, true); moreNav.append(b); });
+moreSec.append(moreNav);
+body.insertBefore(moreSec, body.firstChild);
+
+/* ---------- sort panel sections into tabs ---------- */
+const BY_HEADING = {'h-map':'layers', 'h-terrain':'layers', 'h-avy':'forecast', 'h-route':'route'};
+const BY_ID = {myrose:'forecast', uacforecast:'forecast', conditions:'weather', sun:'layers', customdem:'layers',
+  section:'tools', avyterrain:'tools', tripplan:'trip', offline:'offline', 'shell-more':'more'};
+function tabFor(sec){
+  if(sec.dataset.tab) return sec.dataset.tab;
+  const h = sec.getAttribute('aria-labelledby');
+  if(h && BY_HEADING[h]) return BY_HEADING[h];
+  if(sec.id && BY_ID[sec.id]) return BY_ID[sec.id];
+  if(/Planning aid only/.test(sec.textContent)) return 'about';
+  return 'tools';
+}
+function tagSections(){ [...body.children].forEach(sec => { if(sec.tagName === 'SECTION') sec.dataset.tab = tabFor(sec); }); }
+tagSections();
+new MutationObserver(() => { tagSections(); applyTab(); }).observe(body, {childList:true});
+
+/* ---------- top bar: danger badge + quick layer chips ---------- */
+const topbar = document.createElement('div'); topbar.className = 'topbar'; topbar.id = 'topbar';
+const danger = $('danger');
+if(danger){ topbar.append(danger); danger.title = 'Open the forecast panel';
+  danger.addEventListener('click', e => { if(!e.target.closest('a')) setTab('forecast', true); }); }
+const chips = document.createElement('div'); chips.className = 'chips'; chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Quick layers');
+const CHIPS = [
+  {label:'Slope',    on:() => W.state.mode === 'slope',   toggle:() => W.setMode(W.state.mode === 'slope' ? 'off' : 'slope')},
+  {label:'Aspect',   on:() => W.state.mode === 'aspect',  toggle:() => W.setMode(W.state.mode === 'aspect' ? 'off' : 'aspect')},
+  {label:'Problems', on:() => W.state.mode === 'problem', toggle:() => { W.setMode(W.state.mode === 'problem' ? 'off' : 'problem'); if(W.state.mode === 'problem') setTab('layers', true); }},
+  {label:'My rose',  on:() => !!($('myrose-layer') && $('myrose-layer').checked), toggle:() => {
+    const i = $('myrose-layer'); if(!i) return;
+    if(i.disabled){ setTab('forecast', true); W.toast('Fill in your danger rose first, then turn on its colors.'); return; }
+    i.click(); }},
+  {label:'Sun',      on:() => !!($('sunOn') && $('sunOn').checked), toggle:() => { const i = $('sunOn'); if(i) i.click(); }},
+];
+const chipBtns = CHIPS.map(c => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip-btn'; b.textContent = c.label;
+  b.onclick = () => { c.toggle(); syncChips(); }; chips.append(b); return b; });
+function syncChips(){ CHIPS.forEach((c, i) => chipBtns[i].setAttribute('aria-pressed', String(!!c.on()))); }
+topbar.append(chips);
+document.body.append(topbar);
+document.addEventListener('change', () => setTimeout(syncChips, 0), true);
+syncChips();
+
+/* ---------- route dock (wide screens) ---------- */
+const dock = document.createElement('section'); dock.className = 'dock'; dock.id = 'routeDock'; dock.setAttribute('aria-label', 'Route profile'); dock.hidden = true;
+const dockHead = document.createElement('div'); dockHead.className = 'dock-head';
+const dockName = document.createElement('b');
+const dockStats = document.createElement('div'); dockStats.className = 'dock-stats';
+const dockActions = document.createElement('div'); dockActions.className = 'dock-actions';
+const tripBtn = document.createElement('button'); tripBtn.type = 'button'; tripBtn.className = 'btn'; tripBtn.textContent = 'Trip plan'; tripBtn.onclick = () => setTab('trip', true);
+const collapseBtn = document.createElement('button'); collapseBtn.type = 'button'; collapseBtn.className = 'btn icon';
+collapseBtn.onclick = () => { S.dockCollapsed = !S.dockCollapsed; persist(); placeDock(); W.relayout(); };
+dockHead.append(dockName, dockActions, dockStats);
+const dockBody = document.createElement('div'); dockBody.style.display = 'grid'; dockBody.style.gap = '4px';
+dock.append(dockHead, dockBody);
+document.body.append(dock);
+const routeSec = $('h-route') && $('h-route').closest('section');
+const dockNote = document.createElement('p'); dockNote.className = 'note route-dock-note'; dockNote.hidden = true;
+dockNote.textContent = 'Stats, the elevation profile and the flyover sit along the bottom of the map.';
+if(routeSec) routeSec.insertBefore(dockNote, $('stats'));
+/* Placeholders remember where each piece lives in the Route panel so it can move back on narrow screens. */
+const MOVERS = ['stats', 'profile', 'readout', 'flyBtn', 'fitBtn'].map(id => ({id, el:$(id), ph:document.createComment('slot:' + id)}));
+MOVERS.forEach(m => { if(m.el) m.el.before(m.ph); });
+let docked = false;
+function wantDock(){ const r = W.state.route; return !PHONE.matches && window.innerWidth >= 900 && !!(r && r.coords && r.coords.length >= 2); }
+function placeDock(){
+  const want = wantDock();
+  if(want !== docked){
+    docked = want;
+    MOVERS.forEach(m => { if(!m.el) return;
+      if(docked){ if(m.id === 'stats') dockStats.append(m.el); else if(m.id === 'flyBtn' || m.id === 'fitBtn') dockActions.append(m.el); else dockBody.append(m.el); }
+      else m.ph.after(m.el); });
+    if(docked){ dockActions.append(tripBtn, collapseBtn); }
+  }
+  dock.hidden = !docked; dockNote.hidden = !docked;
+  dockBody.hidden = S.dockCollapsed;
+  collapseBtn.textContent = S.dockCollapsed ? 'Show profile' : 'Hide profile';
+  collapseBtn.setAttribute('aria-expanded', String(!S.dockCollapsed));
+  const r = W.state.route; dockName.textContent = r ? (r.name || 'Route') : '';
+}
+W.on('route', () => { placeDock(); W.relayout(); });
+W.on('profile', () => { placeDock(); });
+
+/* ---------- tabs and drawer ---------- */
+function isOpen(){ return PHONE.matches ? S.phoneOpen : S.open; }
+function applyTab(){
+  const t = S.tab;
+  [...body.children].forEach(sec => { if(sec.tagName === 'SECTION') sec.classList.toggle('tab-off', sec.dataset.tab !== t); });
+  title.textContent = t === 'more' ? 'More' : (TAB[t] ? TAB[t].title : '');
+  /* Hide a section heading that only repeats the panel title. */
+  const norm = x => (x || '').trim().toLowerCase();
+  body.querySelectorAll('section > h2, section > .row > h2, section > .mr-head h2').forEach(h => {
+    const sec = h.closest('section'); h.classList.toggle('dup-h', sec.dataset.tab === t && norm(h.textContent) === norm(title.textContent)); });
+  const open = isOpen();
+  panel.hidden = !open;
+  Object.entries(railBtns).forEach(([id, b]) => {
+    const extraActive = id === 'more' && PHONE.matches && (t === 'more' || (TAB[t] && TAB[t].extra));
+    b.setAttribute('aria-pressed', String(open && (id === t || extraActive)));
+  });
+}
+function setTab(id, forceOpen){
+  S.tab = id;
+  if(forceOpen){ if(PHONE.matches) S.phoneOpen = true; else S.open = true; }
+  persist(); applyTab(); body.scrollTop = 0; W.relayout();
+}
+function setOpen(v){ if(PHONE.matches) S.phoneOpen = v; else S.open = v; persist(); applyTab(); W.relayout(); }
+function onRail(id){
+  const sameTab = S.tab === id || (id === 'more' && PHONE.matches && TAB[S.tab] && TAB[S.tab].extra);
+  if(sameTab && isOpen()) setOpen(false);
+  else setTab(id, true);
+}
+
+/* ---------- layout (replaces the core panel layout) ---------- */
+W.customLayout = () => {
+  const phone = PHONE.matches, open = isOpen();
+  placeDock();
+  const br = document.querySelector('.maplibregl-ctrl-bottom-right');
+  const toast = $('toast');
+  if(phone){
+    const barH = rail.offsetHeight, sheetH = open ? panel.offsetHeight : 0;
+    topbar.style.left = '10px'; topbar.style.right = '58px';
+    const topH = topbar.offsetHeight + 14;
+    W.map.setPadding({left:0, right:0, top:topH, bottom:barH + sheetH});
+    if(br) br.style.bottom = (barH + sheetH) + 'px';
+    if(toast) toast.style.bottom = (barH + sheetH + 12) + 'px';
+  } else {
+    const left = RAIL_W + (open ? DRAWER_W : 0);
+    topbar.style.left = (left + 16) + 'px'; topbar.style.right = '60px';
+    dock.style.left = (left + 16) + 'px';
+    const dockH = docked ? dock.offsetHeight + 16 : 0;
+    W.map.setPadding({left, right:0, top:topbar.offsetHeight + 14, bottom:dockH});
+    if(br) br.style.bottom = dockH ? (dockH + 8) + 'px' : '';
+    if(toast) toast.style.bottom = dockH ? 'calc(' + (dockH + 12) + 'px + env(safe-area-inset-bottom,0px))' : '';
+  }
+};
+PHONE.addEventListener('change', () => { if(S.tab === 'more' && !PHONE.matches) S.tab = 'tools'; applyTab(); });
+
+applyTab();
+placeDock();
+W.relayout();
+/* On phones the expanded attribution box covers the map; start it collapsed (the (i) button opens it). */
+W.map.once('load', () => { if(PHONE.matches){ const a = document.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact-show'); if(a){ a.classList.remove('maplibregl-compact-show'); a.removeAttribute('open'); } } });
+setTimeout(() => W.relayout(), 600);
 })();
 
 </script>
