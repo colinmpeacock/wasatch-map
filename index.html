@@ -2103,6 +2103,33 @@ css.textContent = `
 .conditions-src a,.conditions-err a{color:var(--accent)}
 .conditions-err{font-size:12px;color:var(--fg);background:var(--surface-2);border-radius:8px;padding:7px 9px;line-height:1.45}
 .conditions-err b{color:var(--problem)}
+.conditions-sntl-bar{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
+.conditions-sntl-bar .btn[aria-pressed="true"]{background:var(--fg);color:var(--surface);border-color:var(--fg)}
+.conditions-stn-btn{appearance:none;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;
+  text-decoration:underline dotted var(--muted);text-underline-offset:3px}
+.conditions-stn-btn:hover{color:var(--accent);text-decoration-color:var(--accent)}
+.conditions-stn-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.conditions-sntl tr.conditions-on td{background:color-mix(in srgb, #0891b2 13%, transparent)}
+.conditions-sntl tr.conditions-on.conditions-stn td{border-radius:6px 6px 0 0}
+.conditions-sm{position:relative;width:14px;height:14px;cursor:pointer}
+.conditions-sm-dot{position:absolute;inset:0;border-radius:50%;background:#0891b2;border:2.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.conditions-sm-dot::after{content:"";position:absolute;inset:-3px;border-radius:50%;background:rgba(14,165,200,.6);opacity:0;pointer-events:none}
+.conditions-sm.is-hl{z-index:2}
+.conditions-sm.is-hl .conditions-sm-dot{inset:-3px;background:#0e7490;border-width:3px}
+.conditions-sm-lbl{position:absolute;left:21px;top:50%;transform:translateY(calc(-50% + var(--dy, 0px)));display:grid;gap:1px;white-space:nowrap;
+  background:var(--surface);color:var(--fg);border-radius:7px;padding:4px 8px 5px;box-shadow:0 2px 10px rgba(0,0,0,.28);font:11px/1.3 var(--font-ui)}
+.conditions-sm-lbl b{font-size:12px;font-weight:650}
+.conditions-sm-lbl span{font-family:var(--font-data);font-size:10.5px;color:var(--muted)}
+.conditions-sm.is-left .conditions-sm-lbl{left:auto;right:21px}
+.conditions-sm.is-hl .conditions-sm-lbl{box-shadow:0 0 0 2px #0891b2,0 2px 10px rgba(0,0,0,.28)}
+.conditions-sm.is-new .conditions-sm-dot{animation:conditions-pop .5s ease-out var(--d,0s) backwards, conditions-halo 1.4s ease-in-out calc(var(--d,0s) + .1s) 3}
+.conditions-sm.is-new .conditions-sm-dot::after{animation:conditions-ring 1.4s ease-out calc(var(--d,0s) + .1s) 3}
+.conditions-sm.is-new .conditions-sm-lbl{animation:conditions-fade .6s ease-out calc(var(--d,0s) + .25s) backwards}
+@keyframes conditions-pop{from{transform:scale(.2);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes conditions-halo{0%,100%{box-shadow:0 1px 3px rgba(0,0,0,.45),0 0 0 0 rgba(34,211,238,0)}45%{box-shadow:0 1px 3px rgba(0,0,0,.45),0 0 14px 7px rgba(34,211,238,.75)}}
+@keyframes conditions-ring{0%{transform:scale(1);opacity:.85}75%{opacity:.12}100%{transform:scale(3.8);opacity:0}}
+@keyframes conditions-fade{from{opacity:0;transform:translate(-4px,calc(-50% + var(--dy, 0px)))}to{opacity:1;transform:translate(0,calc(-50% + var(--dy, 0px)))}}
+@media (prefers-reduced-motion:reduce){.conditions-sm *,.conditions-sm *::after{animation:none!important}}
 .conditions-pin{width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--accent);box-shadow:0 0 0 2px var(--surface)}
 `;
 document.head.append(css);
@@ -2264,6 +2291,7 @@ const keyOf = p => p.lat.toFixed(3) + ',' + p.lng.toFixed(3);
 const SOURCES = {nws: loadNws, snotel: loadSnotel};
 
 function setPoint(lng, lat, src){
+  hideSntl(false);
   pt = {lng, lat, src, where: undefined, whereErr: '', here: null, hereErr: ''};
   lookupHere(pt);
   try{
@@ -2424,17 +2452,172 @@ function renderSnotel(s){
     box.innerHTML = `<div class="conditions-err"><b>SNOTEL data did not load:</b> ${esc(s.err)}.${names} ${s.errNetwork ? 'The NRCS service may not allow reading from this page. ' : ''}Open the ${fallback} and click the nearest SNOTEL sites for snow depth and SWE.</div>`;
     return;
   }
-  const rows = s.data.stations.map(st => {
+  const on = i => sntl.shown && sntl.key === keyOf(pt) && sntl.hl === i ? ' conditions-on' : '';
+  const rows = s.data.stations.map((st, i) => {
     const dp = st.depth, sw = st.swe;
     const elev = isFinite(st.elevFt) ? Math.round(st.elevFt).toLocaleString('en-US') + ' ft' : '';
-    return `<tr class="conditions-stn"><td colspan="4">${esc(st.name)} <span>${W.fmtMi(st.dist)}${elev ? ' · ' + elev : ''}${dp || sw ? ' · ' + esc((dp || sw).date) : ''}</span></td></tr>
-      <tr><td>Depth</td><td>${dp ? Math.round(dp.v) + ' in' : '--'}</td><td>${dp ? signed(dp.d24, 0) : '--'}</td><td>${dp ? signed(dp.d72, 0) : '--'}</td></tr>
-      <tr><td>SWE</td><td>${sw ? sw.v.toFixed(1) + ' in' : '--'}</td><td>${sw ? signed(sw.d24, 1) : '--'}</td><td>${sw ? signed(sw.d72, 1) : '--'}</td></tr>`;
+    return `<tr class="conditions-stn${on(i)}"><td colspan="4"><button type="button" class="conditions-stn-btn" data-sntl="${i}" title="Show the nearest SNOTEL sites on the map and highlight this one">${esc(st.name)}</button> <span>${W.fmtMi(st.dist)}${elev ? ' · ' + elev : ''}${dp || sw ? ' · ' + esc((dp || sw).date) : ''}</span></td></tr>
+      <tr class="${on(i).trim()}"><td>Depth</td><td>${dp ? Math.round(dp.v) + ' in' : '--'}</td><td>${dp ? signed(dp.d24, 0) : '--'}</td><td>${dp ? signed(dp.d72, 0) : '--'}</td></tr>
+      <tr class="${on(i).trim()}"><td>SWE</td><td>${sw ? sw.v.toFixed(1) + ' in' : '--'}</td><td>${sw ? signed(sw.d24, 1) : '--'}</td><td>${sw ? signed(sw.d72, 1) : '--'}</td></tr>`;
   }).join('');
-  box.innerHTML = `<table class="conditions-sntl"><thead><tr><th>Nearest SNOTEL</th><th>Now</th><th>24 h</th><th>72 h</th></tr></thead><tbody>${rows}</tbody></table>
+  box.innerHTML = `${sntlBar()}<table class="conditions-sntl"><thead><tr><th>Nearest SNOTEL</th><th>Now</th><th>24 h</th><th>72 h</th></tr></thead><tbody>${rows}</tbody></table>
     ${statusLine('snotel', s, 'NRCS SNOTEL daily data (AWDB)')}
     <div class="conditions-src">Straight-line distance to Utah SNOTEL sites only; a site in another drainage or aspect can read very differently. More on the ${fallback}.</div>`;
+  if(sntl.shown && sntl.revealed && sntl.key === keyOf(pt)) syncMarkers(s.data.stations);
 }
+function sntlBar(){
+  const shown = sntl.shown && sntl.key === keyOf(pt);
+  return `<div class="conditions-sntl-bar"><button type="button" class="btn" data-sntl="all" aria-pressed="${shown}">${shown ? 'Hide on map' : 'Show on map'}</button>
+    <span class="conditions-src">${shown ? 'Tap a site name or dot to highlight it.' : 'Or tap a site name to show all three and highlight it.'}</span></div>`;
+}
+
+/* ---------- SNOTEL sites on the map ---------- */
+const sntl = {shown: false, revealed: false, hl: -1, key: '', markers: [], timer: 0};
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function sntlStations(){
+  const s = pt && (cache.get(keyOf(pt)) || {}).snotel;
+  return s ? (s.data ? s.data.stations : s.errStations) || null : null;
+}
+function sntlLabel(st){
+  const dp = st.depth, mi = st.dist / W.MI;
+  const depth = dp ? `${Math.round(dp.v)} in deep${dp.d24 != null ? ' · ' + signed(dp.d24, 0) + ' in 24 h' : ''}` : 'No depth reading';
+  const elev = isFinite(st.elevFt) ? Math.round(st.elevFt).toLocaleString('en-US') + ' ft · ' : '';
+  return `<b>${esc(st.name)}</b><span>${depth}</span><span>${elev}${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi from pin</span>`;
+}
+// Largest zoom (up to 14) at which every site lands inside the visible map, with the pin kept at the center and the
+// current tilt and bearing kept. Uses a copy of the map camera, so nothing moves while it searches. pts are
+// [lng, lat, elevation m]; known elevations matter in the tilted 3D view, where MapLibre treats terrain it has not
+// loaded yet (off-screen sites) as sea level.
+function fitZoom(center, pts, centerElev){
+  const m = W.map, cv = m.getCanvas(), w = cv.clientWidth, h = cv.clientHeight, pad = m.getPadding();
+  let L = pad.left + 28, R = w - pad.right - 28, T = pad.top + 40, B = h - pad.bottom - 30;   // labels flip sides near an edge
+  if(R - L < 80){ L = pad.left + 12; R = w - pad.right - 12; }
+  if(B - T < 80){ T = pad.top + 12; B = h - pad.bottom - 12; }
+  const LL = W.maplibregl.LngLat, terrain = m.terrain || null, ex = terrain ? (+terrain.exaggeration || 1) : 0;
+  const proj = (tr, p) => {
+    const ll = new LL(p[0], p[1]);
+    if(terrain && isFinite(p[2]) && typeof tr.coordinatePoint === 'function' && tr.pixelMatrix3D)
+      return tr.coordinatePoint(tr.locationCoordinate(ll), p[2] * ex, tr.pixelMatrix3D);
+    return tr.locationPoint(ll, terrain || undefined);
+  };
+  const fits = z => {
+    const tr = m.transform.clone(); tr.zoom = z; tr.center = new LL(center[0], center[1]);
+    if(terrain) tr.elevation = isFinite(centerElev) ? centerElev * ex : terrain.getElevationForLngLatZoom(tr.center, tr.tileZoom);
+    return pts.every(p => { const q = proj(tr, p);
+      return q && isFinite(q.x) && isFinite(q.y) && q.x >= L && q.x <= R && q.y >= T && q.y <= B; });
+  };
+  try{
+    let lo = 5, hi = Math.min(14, m.getMaxZoom());
+    if(fits(hi)) return hi;
+    if(!fits(lo)) throw new Error('no fit');
+    for(let i = 0; i < 18; i++){ const mid = (lo + hi) / 2; if(fits(mid)) lo = mid; else hi = mid; }
+    return lo;
+  }catch(e){
+    // Fallback without the camera copy: fit a box centred on the pin, then back off a little for the tilt.
+    let dx = 0, dy = 0; for(const p of pts){ dx = Math.max(dx, Math.abs(p[0] - center[0])); dy = Math.max(dy, Math.abs(p[1] - center[1])); }
+    const cam = m.cameraForBounds([[center[0] - dx, center[1] - dy], [center[0] + dx, center[1] + dy]], {padding: 60});
+    return cam ? cam.zoom - (m.getPitch() > 30 ? 0.7 : 0.2) : m.getZoom() - 1;
+  }
+}
+// Put each label on whichever side of its dot has room (so labels near the right edge are not cut off), then
+// nudge any label that would cover another label, a dot or the weather pin down below it.
+// Works from where the dots are actually drawn, one frame after the map moves, so it matches the screen.
+function placeLabels(){
+  const m = W.map, cr = m.getContainer().getBoundingClientRect(), w = cr.width, boxes = [];
+  const mid = el => { const r = el.getBoundingClientRect(); return {x: r.left + r.width / 2 - cr.left, y: r.top + r.height / 2 - cr.top}; };
+  if(pin && pin.getElement && pin.getElement().isConnected){ const p = mid(pin.getElement()); boxes.push({l: p.x - 11, r: p.x + 11, t: p.y - 11, b: p.y + 11}); }
+  const items = sntl.markers.map(mk => {
+    const el = mk.getElement(), lbl = el.querySelector('.conditions-sm-lbl'), q = mid(el);
+    return {el, x: q.x, y: q.y, lw: (lbl && lbl.offsetWidth) || 160, lh: (lbl && lbl.offsetHeight) || 46};
+  });
+  for(const it of items) boxes.push({l: it.x - 10, r: it.x + 10, t: it.y - 10, b: it.y + 10});
+  items.sort((a, b) => (b.el.classList.contains('is-hl') - a.el.classList.contains('is-hl')) || a.y - b.y);
+  for(const it of items){
+    const left = it.x + it.lw + 20 > w && it.x - it.lw - 20 >= 0;
+    it.el.classList.toggle('is-left', left);
+    const l = left ? it.x - 14 - it.lw : it.x + 14, r = l + it.lw;   // label sits 21px from the 14px marker box
+    // try the smallest shift, up or down, that clears everything already placed
+    const t0 = it.y - it.lh / 2, clear = d => !boxes.some(o => o.l < r && o.r > l && o.t < t0 + d + it.lh && o.b > t0 + d);
+    const cands = [0]; for(const o of boxes) if(o.l < r && o.r > l) cands.push(o.b - t0 + 4, o.t - (t0 + it.lh) - 4);
+    const dy = cands.filter(d => Math.abs(d) <= it.lh * 2.5).sort((a, b) => Math.abs(a) - Math.abs(b)).find(clear) || 0;
+    it.el.style.setProperty('--dy', Math.round(dy) + 'px');
+    boxes.push({l, r, t: it.y - it.lh / 2 + dy, b: it.y + it.lh / 2 + dy});
+  }
+}
+let placeQueued = false;
+function queuePlace(){ if(placeQueued) return; placeQueued = true; requestAnimationFrame(() => { placeQueued = false; if(sntl.markers.length) placeLabels(); }); }
+W.map.on('move', () => { if(sntl.markers.length) queuePlace(); });
+function clearMarkers(){ for(const mk of sntl.markers) mk.remove(); sntl.markers = []; }
+function hideSntl(rerender = true){
+  clearTimeout(sntl.timer); clearMarkers();
+  sntl.shown = false; sntl.revealed = false; sntl.hl = -1; sntl.key = '';
+  if(rerender) render();
+}
+function addMarkers(list){
+  clearMarkers();
+  const anim = !reduceMotion();
+  list.forEach((st, i) => {
+    const el = document.createElement('div');
+    el.className = 'conditions-sm' + (i === sntl.hl ? ' is-hl' : '') + (anim ? ' is-new' : '');
+    el.innerHTML = `<span class="conditions-sm-dot"></span><span class="conditions-sm-lbl">${sntlLabel(st)}</span>`;
+    el.style.setProperty('--d', (i * 0.22) + 's');   // small stagger between the three sites
+    el.setAttribute('role', 'button'); el.tabIndex = 0;
+    el.setAttribute('aria-label', `SNOTEL site ${st.name}. Highlight it in the table.`);
+    const pick = e => { e.stopPropagation(); setHl(i, true); };
+    el.addEventListener('click', pick);
+    el.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pick(e); } });
+    const mk = new W.maplibregl.Marker({element: el, anchor: 'center', opacityWhenCovered: '1'}).setLngLat([st.lng, st.lat]).addTo(W.map);
+    sntl.markers.push(mk);
+  });
+  queuePlace();
+}
+function syncMarkers(list){   // refresh label text after new data, without replaying the animation
+  sntl.markers.forEach((mk, i) => { const st = list[i], lbl = mk.getElement().querySelector('.conditions-sm-lbl');
+    if(st && lbl) lbl.innerHTML = sntlLabel(st); mk.getElement().classList.toggle('is-hl', i === sntl.hl); });
+}
+function onScreen(st){
+  const q = W.map.project([st.lng, st.lat]), cv = W.map.getCanvas(), pad = W.map.getPadding();
+  return q.x >= pad.left && q.x <= cv.clientWidth - pad.right && q.y >= pad.top && q.y <= cv.clientHeight - pad.bottom;
+}
+const PHONE = window.matchMedia('(max-width: 759px)');
+function showSntl(hl){
+  const list = sntlStations(); if(!list || !list.length || !pt) return;
+  clearTimeout(sntl.timer); clearMarkers();
+  Object.assign(sntl, {shown: true, revealed: false, hl, key: keyOf(pt)});
+  render();
+  if(PHONE.matches && typeof W.setDrawerOpen === 'function' && W.isDrawerOpen && W.isDrawerOpen()){
+    W.setDrawerOpen(false);   // the sheet covers most of a phone screen; uncover the map
+    W.toast('Showing the 3 nearest SNOTEL sites. Tap Weather to see the table again.');
+  }
+  const key = sntl.key, reveal = () => {
+    if(!sntl.shown || sntl.revealed || sntl.key !== key) return;
+    sntl.revealed = true; clearTimeout(sntl.timer); addMarkers(sntlStations() || list);
+  };
+  const dur = reduceMotion() ? 0 : 1600;
+  W.map.once('moveend', reveal);
+  sntl.timer = setTimeout(reveal, dur + 300);
+  const pts = list.map(st => [st.lng, st.lat, isFinite(st.elevFt) ? st.elevFt / W.FT : NaN]);
+  const zoom = fitZoom([pt.lng, pt.lat], pts, pt.here && isFinite(pt.here.elev) ? pt.here.elev : NaN);
+  W.map.easeTo({center: [pt.lng, pt.lat], zoom, duration: dur, essential: true});
+}
+function setHl(i, pulse){
+  sntl.hl = i;
+  sntl.markers.forEach((mk, j) => {
+    const el = mk.getElement(); el.classList.toggle('is-hl', j === i);
+    if(pulse && j === i && !reduceMotion()){ el.classList.remove('is-new'); el.style.setProperty('--d', '0s'); void el.offsetWidth; el.classList.add('is-new'); }
+  });
+  render();
+  const row = document.querySelector(`#conditions-snotel tr.conditions-stn.conditions-on`);
+  if(row && row.scrollIntoView) row.scrollIntoView({block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth'});
+}
+$('conditions-snotel').addEventListener('click', e => {
+  const b = e.target.closest('[data-sntl]'); if(!b) return;
+  const v = b.dataset.sntl, same = sntl.shown && sntl.key === keyOf(pt);
+  if(v === 'all'){ if(same) hideSntl(); else showSntl(-1); return; }
+  const i = +v, list = sntlStations();
+  if(same && sntl.revealed && list && list[i] && onScreen(list[i])) setHl(i, true);
+  else showSntl(i);
+});
 
 function render(){
   if(!pt) return;
@@ -3738,6 +3921,8 @@ function setTab(id, forceOpen){
   persist(); applyTab(); body.scrollTop = 0; W.relayout();
 }
 function setOpen(v){ if(PHONE.matches) S.phoneOpen = v; else S.open = v; persist(); applyTab(); W.relayout(); }
+W.setDrawerOpen = v => setOpen(!!v);   // for modules, e.g. to uncover the map on phones
+W.isDrawerOpen = () => isOpen();
 function onRail(id){
   const sameTab = S.tab === id || (id === 'more' && PHONE.matches && TAB[S.tab] && TAB[S.tab].extra);
   if(sameTab && isOpen()) setOpen(false);
