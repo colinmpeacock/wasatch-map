@@ -59,6 +59,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .btn.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .btn.icon{padding:6px 9px}
+select.btn{appearance:auto;-webkit-appearance:menulist;width:auto;padding:6px 6px 6px 9px}
 
 .switch{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
 .switch input{appearance:none;width:34px;height:20px;border-radius:20px;background:var(--line);position:relative;cursor:pointer;flex:none;transition:background .15s}
@@ -74,6 +75,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .seg input:focus-visible+span{outline:2px solid var(--accent)}
 
 .legend{display:flex;flex-wrap:wrap;gap:6px 10px;font-size:12px}
+.ovl-list{display:grid;gap:10px}
+.ovl{display:grid;gap:6px}
+.ovl .legend:empty,.ovl .legend[hidden]{display:none}
+.band-box{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 
 .danger{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}
@@ -178,43 +183,29 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     </section>
 
     <section aria-labelledby="h-terrain">
-      <div class="row between"><h2 id="h-terrain">Terrain analysis</h2><span class="small muted" id="zoomHint"></span></div>
-      <div class="seg" role="radiogroup" aria-label="Terrain analysis layer">
-        <label><input type="radio" name="mode" value="off"><span>Off</span></label>
-        <label><input type="radio" name="mode" value="slope" checked><span>Slope</span></label>
-        <label><input type="radio" name="mode" value="aspect"><span>Aspect</span></label>
-        <label><input type="radio" name="mode" value="problem"><span>Problems</span></label>
+      <div class="row between"><h2 id="h-terrain">Map overlays</h2><span class="small muted" id="zoomHint"></span></div>
+      <p class="note" style="margin:0">Turn on as many as you like; they draw on top of each other.</p>
+      <div class="ovl-list" id="ovlList">
+        <div class="ovl" id="ovl-slope">
+          <label class="switch"><span>Slope angle</span><input type="checkbox" id="slopeOn"></label>
+          <div class="legend" id="legendSlope"></div>
+        </div>
+        <div class="ovl" id="ovl-aspect">
+          <label class="switch"><span>Aspect</span><input type="checkbox" id="aspectOn"></label>
+          <div class="legend" id="legendAspect"></div>
+        </div>
+        <label class="field" id="ovl-opacity">Slope and aspect opacity <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.6"></label>
+        <div class="ovl" id="ovl-zones">
+          <label class="switch"><span>Forecast zones</span><input type="checkbox" id="avyToggle"></label>
+          <p class="note" style="margin:0">Zone outlines colored by today's danger rating from avalanche.org. Read the full forecast at <a href="https://utahavalanchecenter.org/forecast/salt-lake" target="_blank" rel="noopener">utahavalanchecenter.org</a> before you go.</p>
+        </div>
       </div>
-      <label class="field">Layer opacity <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.6"></label>
-      <div class="legend" id="legend"></div>
-
-      <div id="problemBox" hidden>
-        <p class="note" style="margin:0">Tap the rose to match today's avalanche problems. The map highlights slopes at or above the minimum angle on those aspects and elevation bands.</p>
-        <div class="rose-wrap" style="margin-top:8px">
-          <svg class="rose" id="rose" viewBox="-128 -128 256 256" role="group" aria-label="Aspect and elevation rose"></svg>
-          <div class="rose-key">
-            <span>Center: <b id="kHigh">above 9,500 ft</b></span>
-            <span>Middle: <b id="kMid">8,000–9,500 ft</b></span>
-            <span>Outer: <b id="kLow">below 8,000 ft</b></span>
-            <div class="row" style="margin-top:4px">
-              <button class="btn icon" id="roseAll">All</button>
-              <button class="btn icon" id="roseNone">None</button>
-            </div>
-          </div>
-        </div>
-        <div class="row" style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <label class="field">Min slope °<input type="number" id="minSlope" min="20" max="50" step="1" value="30"></label>
-          <label class="field">Low/mid ft<input type="number" id="bandLow" min="4000" max="12000" step="100" value="8000"></label>
-          <label class="field">Mid/high ft<input type="number" id="bandHigh" min="4000" max="13000" step="100" value="9500"></label>
-        </div>
+      <div class="band-box" id="bandBox">
+        <label class="field">Low/mid band ft<input type="number" id="bandLow" min="4000" max="12000" step="100" value="8000"></label>
+        <label class="field">Mid/high band ft<input type="number" id="bandHigh" min="4000" max="13000" step="100" value="9500"></label>
       </div>
     </section>
 
-    <section aria-labelledby="h-avy">
-      <h2 id="h-avy">Avalanche forecast</h2>
-      <label class="switch"><span>Show forecast zones on map</span><input type="checkbox" id="avyToggle"></label>
-      <p class="note" style="margin:0">Danger ratings come from avalanche.org. Read the full forecast at <a href="https://utahavalanchecenter.org/forecast/salt-lake" target="_blank" rel="noopener">utahavalanchecenter.org</a> before you go.</p>
-    </section>
 
     <section aria-labelledby="h-route">
       <div class="row between"><h2 id="h-route">Route</h2><span class="tag" id="exampleTag" hidden>Example</span></div>
@@ -231,6 +222,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <div class="readout" id="readout">Hover the profile to find that spot on the map.</div>
       <div class="row">
         <button class="btn primary" id="flyBtn">Play flyover</button>
+        <select class="btn" id="flySpeed" aria-label="Flyover speed" title="Flyover speed: change it any time, even mid-flight">
+          <option value="0.5">0.5× speed</option><option value="1">1× speed</option><option value="2">2× speed</option><option value="4">4× speed</option>
+        </select>
         <button class="btn" id="fitBtn">Zoom to route</button>
         <button class="btn" id="exportBtn">Export GPX</button>
         <button class="btn" id="saveBtn">Save</button>
@@ -296,9 +290,8 @@ const store = {
 
 const state = {
   base:'topo', dem:'aws', terrain3d:true, exaggeration:1.2, hillshade:true,
-  mode:'slope', opacity:0.6, minSlope:30, bandLow:8000, bandHigh:9500,
-  rose:new Set(['high-0','high-1','high-7','high-2','mid-0','mid-1','mid-7']),
-  avyVisible:false, avyData:null, route:null, drawing:false, profile:null, ver:1, cursorD:null
+  layers:Object.assign({slope:true, aspect:false}, store.get('wbp.overlays', {})), opacity:0.6, bandLow:8000, bandHigh:9500,
+  avyVisible:!!store.get('wbp.zones', false), avyData:null, route:null, drawing:false, profile:null, ver:1, cursorD:null
 };
 
 /* ---------- small utils ---------- */
@@ -342,7 +335,6 @@ function loadDem(demId, z, x, y){
 const slopeLUT = (() => { const t=[]; for(let d=0; d<=90; d++){ const k=SLOPE_CLASSES.find(c=>d>=c.min&&d<c.max); t.push(k?k.c:null); } return t; })();
 function renderAnalysis(mode, tile, z, y){
   const {w,h,elev} = tile, out = new Uint8ClampedArray(w*h*4), n2 = Math.pow(2,z);
-  const minS = state.minSlope, rose = state.rose, lowM = state.bandLow/FT, highM = state.bandHigh/FT;
   for(let r=0; r<h; r++){
     const lat = tileRowLat(z, y, (r+0.5)/h), pix = EARTH*Math.cos(lat*Math.PI/180)/(n2*w);
     const ru = r>0 ? r-1 : r, rd = r<h-1 ? r+1 : r, dyN = (rd-ru)*pix;
@@ -357,13 +349,7 @@ function renderAnalysis(mode, tile, z, y){
       } else {
         if(slope < 5) continue;
         const asp = (Math.atan2(-dzdx,-dzdn)*57.29578+360)%360, ai = Math.floor(((asp+22.5)%360)/45);
-        if(mode === 'aspect'){
-          const col = ASPECT_COLORS[ai]; out[o]=col[0]; out[o+1]=col[1]; out[o+2]=col[2]; out[o+3]=Math.min(1,(slope-5)/20)*235;
-        } else if(slope >= minS){
-          const e = elev[i], band = e < lowM ? 'low' : e < highM ? 'mid' : 'high';
-          if(rose.has(band+'-'+ai)){ out[o]=214; out[o+1]=40; out[o+2]=100; out[o+3]=240; }
-          else { out[o]=60; out[o+1]=66; out[o+2]=80; out[o+3]=70; }
-        }
+        const col = ASPECT_COLORS[ai]; out[o]=col[0]; out[o+1]=col[1]; out[o+2]=col[2]; out[o+3]=Math.min(1,(slope-5)/20)*235;
       }
     }
   }
@@ -416,7 +402,10 @@ map.addControl(new maplibregl.ScaleControl({unit:'imperial'}), 'bottom-right');
 map.addControl(new maplibregl.AttributionControl({compact:true}), 'bottom-right');
 map.on('error', e => { if(e && e.error) console.warn(e.error.message || e.error); });
 
-const analysisUrl = () => `wbp://${state.mode==='off'?'slope':state.mode}/${state.dem}/{z}/{x}/{y}?v=${state.ver}`;
+/* Slope and aspect are separate layers so both can show at once; aspect sits under slope. */
+const OVERLAYS = ['aspect', 'slope'];
+const analysisUrl = mode => `wbp://${mode}/${state.dem}/{z}/{x}/{y}?v=${state.ver}`;
+const anyAnalysis = () => OVERLAYS.some(m => state.layers[m]);
 function firstSymbolId(){ const l=map.getStyle().layers.find(l=>l.type==='symbol'); return l ? l.id : undefined; }
 
 function addOverlays(){
@@ -427,9 +416,10 @@ function addOverlays(){
   if(!map.getLayer('hillshade')) map.addLayer({id:'hillshade', type:'hillshade', source:'dem-hs',
     layout:{visibility:state.hillshade?'visible':'none'},
     paint:{'hillshade-exaggeration':0.35,'hillshade-shadow-color':'#27313d','hillshade-highlight-color':'#ffffff','hillshade-accent-color':'#4c5765'}}, before);
-  if(!map.getSource('analysis')) map.addSource('analysis', {type:'raster', tiles:[analysisUrl()], tileSize:d.tileSize, maxzoom:d.analysisMax});
-  if(!map.getLayer('analysis')) map.addLayer({id:'analysis', type:'raster', source:'analysis', minzoom:10.5,
-    layout:{visibility:state.mode==='off'?'none':'visible'}, paint:{'raster-opacity':state.opacity,'raster-fade-duration':0}}, before);
+  for(const m of OVERLAYS){ const id = 'analysis-' + m;
+    if(!map.getSource(id)) map.addSource(id, {type:'raster', tiles:[analysisUrl(m)], tileSize:d.tileSize, maxzoom:d.analysisMax});
+    if(!map.getLayer(id)) map.addLayer({id, type:'raster', source:id, minzoom:10.5,
+      layout:{visibility:state.layers[m]?'visible':'none'}, paint:{'raster-opacity':state.opacity,'raster-fade-duration':0}}, before); }
   if(state.avyData) addAvyLayers();
   if(!map.getSource('route')) map.addSource('route', {type:'geojson', data:routeGeoJSON()});
   if(!map.getLayer('route-casing')) map.addLayer({id:'route-casing', type:'line', source:'route', filter:['==',['geometry-type'],'LineString'],
@@ -451,10 +441,10 @@ function applyTerrain(){
 function applyStyle(){ stopFly(); styleReady = false; map.setStyle(styleFor(state.base), {diff:false}); }
 function refreshAnalysis(){
   state.ver++;
-  const src = map.getSource('analysis');
-  if(src && typeof src.setTiles === 'function') src.setTiles([analysisUrl()]);
-  else if(map.getLayer('analysis')){ map.removeLayer('analysis'); map.removeSource('analysis'); addOverlays(); }
-  if(map.getLayer('analysis')) map.setLayoutProperty('analysis','visibility', state.mode==='off'?'none':'visible');
+  for(const m of OVERLAYS){ const id = 'analysis-' + m, src = map.getSource(id);
+    if(src && typeof src.setTiles === 'function') src.setTiles([analysisUrl(m)]);
+    else if(map.getLayer(id)){ map.removeLayer(id); map.removeSource(id); addOverlays(); }
+    if(map.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.layers[m]?'visible':'none'); }
   renderLegend();
 }
 
@@ -462,7 +452,7 @@ function refreshAnalysis(){
 function dangerLevel(p){ const l = Number(p.danger_level); return (p.off_season || !(l>=1 && l<=5)) ? 0 : l; }
 function addAvyLayers(){
   if(!map.getSource('avy')) map.addSource('avy', {type:'geojson', data:state.avyData, attribution:'Forecast zones: avalanche.org'});
-  const vis = state.avyVisible ? 'visible' : 'none', before = map.getLayer('analysis') ? 'analysis' : firstSymbolId();
+  const vis = state.avyVisible ? 'visible' : 'none', before = map.getLayer('analysis-aspect') ? 'analysis-aspect' : firstSymbolId();
   const color = ['match',['coalesce',['get','danger_level'],0],1,DANGER[1].bg,2,DANGER[2].bg,3,DANGER[3].bg,4,DANGER[4].bg,5,DANGER[5].bg,DANGER[0].bg];
   if(!map.getLayer('avy-fill')) map.addLayer({id:'avy-fill', type:'fill', source:'avy', layout:{visibility:vis}, paint:{'fill-color':color,'fill-opacity':0.22}}, before);
   if(!map.getLayer('avy-line')) map.addLayer({id:'avy-line', type:'line', source:'avy', layout:{visibility:vis}, paint:{'line-color':color,'line-width':2.5}}, map.getLayer('route-casing') ? 'route-casing' : undefined);
@@ -506,38 +496,20 @@ async function loadAvy(){
   }
 }
 
-/* ---------- legend + rose ---------- */
+/* ---------- legends ---------- */
 function renderLegend(){
-  const el=$('legend'); el.textContent='';
-  const add=(rgb,label)=>{ const s=document.createElement('span'); const i=document.createElement('i'); i.style.background=`rgb(${rgb.join(',')})`; s.append(i,label); el.append(s); };
-  if(state.mode==='slope') SLOPE_CLASSES.forEach(k=>add(k.c,k.label));
-  else if(state.mode==='aspect') ASPECTS.forEach((a,i)=>add(ASPECT_COLORS[i],a));
-  else if(state.mode==='problem'){ add([214,40,100],`Matches rose, ≥${state.minSlope}°`); add([60,66,80],`Other terrain ≥${state.minSlope}° (faint)`); }
-  $('problemBox').hidden = state.mode!=='problem';
-  $('zoomHint').textContent = (state.mode!=='off' && map.getZoom() < 10.5) ? 'Zoom in to see shading' : '';
+  const fill = (el, items) => { el.textContent = ''; items.forEach(([rgb, label]) => { const sp = document.createElement('span'), i = document.createElement('i');
+    i.style.background = `rgb(${rgb.join(',')})`; sp.append(i, label); el.append(sp); }); };
+  fill($('legendSlope'), state.layers.slope ? SLOPE_CLASSES.map(k => [k.c, k.label]) : []);
+  fill($('legendAspect'), state.layers.aspect ? ASPECTS.map((a, i) => [ASPECT_COLORS[i], a]) : []);
+  $('slopeOn').checked = !!state.layers.slope; $('aspectOn').checked = !!state.layers.aspect;
+  $('ovl-opacity').hidden = !anyAnalysis();
+  $('zoomHint').textContent = (anyAnalysis() && map.getZoom() < 10.5) ? 'Zoom in to see shading' : '';
 }
-function sectorPath(r1, r2, a1, a2){
-  const p=(r,a)=>{ const t=a*Math.PI/180; return [(r*Math.sin(t)).toFixed(2), (-r*Math.cos(t)).toFixed(2)]; };
-  const [x1,y1]=p(r2,a1),[x2,y2]=p(r2,a2),[x3,y3]=p(r1,a2),[x4,y4]=p(r1,a1);
-  return `M${x1} ${y1}A${r2} ${r2} 0 0 1 ${x2} ${y2}L${x3} ${y3}A${r1} ${r1} 0 0 0 ${x4} ${y4}Z`;
-}
-function buildRose(){
-  const svg=$('rose'), NS='http://www.w3.org/2000/svg', radii={high:[10,40],mid:[40,70],low:[70,100]};
-  const bandText={high:()=>`above ${state.bandHigh.toLocaleString()} ft`, mid:()=>`${state.bandLow.toLocaleString()}–${state.bandHigh.toLocaleString()} ft`, low:()=>`below ${state.bandLow.toLocaleString()} ft`};
-  svg.textContent='';
-  BANDS.forEach(b => ASPECTS.forEach((a,i) => {
-    const key=b+'-'+i, path=document.createElementNS(NS,'path');
-    path.setAttribute('d', sectorPath(radii[b][0], radii[b][1], i*45-22.5, i*45+22.5));
-    path.setAttribute('tabindex','0'); path.setAttribute('role','button');
-    const sync=()=>{ const on=state.rose.has(key); path.classList.toggle('sel',on); path.setAttribute('aria-pressed',on); path.setAttribute('aria-label',`${a}, ${bandText[b]()}`); };
-    const toggle=()=>{ state.rose.has(key)?state.rose.delete(key):state.rose.add(key); sync(); refreshAnalysis(); };
-    path.addEventListener('click', toggle);
-    path.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
-    sync(); svg.append(path);
-  }));
-  ASPECTS.forEach((a,i)=>{ const t=document.createElementNS(NS,'text'), ang=i*45*Math.PI/180;
-    t.setAttribute('x',(114*Math.sin(ang)).toFixed(1)); t.setAttribute('y',(-114*Math.cos(ang)).toFixed(1)); t.textContent=a; svg.append(t); });
-  $('kHigh').textContent=bandText.high(); $('kMid').textContent=bandText.mid(); $('kLow').textContent=bandText.low();
+function setOverlay(m, on){
+  if(!OVERLAYS.includes(m)) return;
+  state.layers[m] = !!on; store.set('wbp.overlays', state.layers); refreshAnalysis();
+  document.dispatchEvent(new CustomEvent('wbp:overlays'));
 }
 
 /* ---------- route ---------- */
@@ -558,7 +530,7 @@ function routeChanged(opts={}){
 }
 function syncRouteButtons(){
   const has = !!(state.route && state.route.coords.length >= 2), any = !!(state.route && state.route.coords.length);
-  ['flyBtn','fitBtn','exportBtn','saveBtn'].forEach(id => $(id).disabled = !has);
+  ['flyBtn','flySpeed','fitBtn','exportBtn','saveBtn'].forEach(id => $(id).disabled = !has);
   $('undoBtn').disabled = !any; $('clearBtn').disabled = !any;
 }
 function densify(coords, step){
@@ -668,7 +640,7 @@ function startFly(){
     if(!fly) return;
     if(state.profile !== P){ stopFly(); return; }
     if(fly.last==null) fly.last=ts;
-    if(!fly.paused) fly.elapsed += Math.min(100, ts-fly.last);
+    if(!fly.paused) fly.elapsed += Math.min(100, ts-fly.last) * state.flySpeed;
     fly.last = ts;
     const f = Math.min(1, fly.elapsed/dur), d = f*P.total, s = pointAt(d), ahead = pointAt(Math.min(P.total, d+look));
     const tb = hav(s.p, ahead.p) > 5 ? bearingOf(s.p, ahead.p) : (fly.bearing ?? map.getBearing());
@@ -786,7 +758,7 @@ map.on('dblclick', e => { if(state.drawing){ e.preventDefault();
   const c = state.route && state.route.coords;
   if(c && c.length >= 2 && hav(c[c.length-1], c[c.length-2]) < 25) c.pop();
   setDrawing(false); routeChanged(); } });
-map.on('moveend', () => { if(fly) return; updateDangerBadge(); if(state.mode!=='off') $('zoomHint').textContent = map.getZoom() < 10.5 ? 'Zoom in to see shading' : ''; });
+map.on('moveend', () => { if(fly) return; updateDangerBadge(); if(anyAnalysis()) $('zoomHint').textContent = map.getZoom() < 10.5 ? 'Zoom in to see shading' : ''; });
 
 /* ---------- controls ---------- */
 $('baseSel').onchange = e => { state.base = e.target.value; applyStyle(); };
@@ -794,15 +766,15 @@ $('demSel').onchange = e => { state.dem = e.target.value; demCache.clear(); appl
 $('t3d').onchange = e => { state.terrain3d = e.target.checked; applyTerrain(); if(!state.terrain3d) map.easeTo({pitch:0, duration:600}); else map.easeTo({pitch:60, duration:600}); };
 $('exag').oninput = e => { state.exaggeration = +e.target.value; $('exVal').textContent = state.exaggeration.toFixed(1)+'×'; applyTerrain(); };
 $('hs').onchange = e => { state.hillshade = e.target.checked; if(map.getLayer('hillshade')) map.setLayoutProperty('hillshade','visibility', state.hillshade?'visible':'none'); };
-document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = e => { state.mode = e.target.value; refreshAnalysis(); });
-$('opacity').oninput = e => { state.opacity = +e.target.value; if(map.getLayer('analysis')) map.setPaintProperty('analysis','raster-opacity', state.opacity); };
+$('slopeOn').onchange = e => setOverlay('slope', e.target.checked);
+$('aspectOn').onchange = e => setOverlay('aspect', e.target.checked);
+$('opacity').oninput = e => { state.opacity = +e.target.value; OVERLAYS.forEach(m => { if(map.getLayer('analysis-'+m)) map.setPaintProperty('analysis-'+m,'raster-opacity', state.opacity); }); };
 const numIn = (id, key, lo, hi) => $(id).onchange = e => { const v = Math.min(hi, Math.max(lo, Math.round(+e.target.value || state[key]))), prev = state[key]; state[key] = v;
   if(state.bandLow >= state.bandHigh){ state[key] = prev; e.target.value = prev; toast('The low/mid boundary has to be below the mid/high boundary, so it stays at '+prev.toLocaleString('en-US')+' ft.'); return; }
-  e.target.value = v; buildRose(); refreshAnalysis(); };
-numIn('minSlope','minSlope',20,50); numIn('bandLow','bandLow',4000,12000); numIn('bandHigh','bandHigh',4000,13000);
-$('roseAll').onclick = () => { BANDS.forEach(b=>ASPECTS.forEach((a,i)=>state.rose.add(b+'-'+i))); buildRose(); refreshAnalysis(); };
-$('roseNone').onclick = () => { state.rose.clear(); buildRose(); refreshAnalysis(); };
-$('avyToggle').onchange = e => { state.avyVisible = e.target.checked; ['avy-fill','avy-line'].forEach(id => map.getLayer(id) && map.setLayoutProperty(id,'visibility', state.avyVisible?'visible':'none')); };
+  e.target.value = v; refreshAnalysis(); };
+numIn('bandLow','bandLow',4000,12000); numIn('bandHigh','bandHigh',4000,13000);
+$('avyToggle').checked = state.avyVisible;
+$('avyToggle').onchange = e => { state.avyVisible = e.target.checked; store.set('wbp.zones', state.avyVisible); ['avy-fill','avy-line'].forEach(id => map.getLayer(id) && map.setLayoutProperty(id,'visibility', state.avyVisible?'visible':'none')); };
 $('importBtn').onclick = () => $('gpxFile').click();
 $('gpxFile').onchange = async e => { const f = e.target.files[0]; if(!f) return;
   try{ const r = parseGpx(await f.text()); stopFly(); setDrawing(false); state.route = r; routeChanged({now:true}); fitRoute(); toast('Imported '+r.coords.length.toLocaleString()+' points from '+f.name); }
@@ -813,6 +785,11 @@ $('undoBtn').onclick = () => { stopFly(); if(!state.route) return; if(state.rout
 $('clearBtn').onclick = () => { stopFly(); state.route = null; routeChanged({now:true}); };
 $('routeName').oninput = e => { if(state.route){ state.route.name = e.target.value; state.route.example = false; $('exampleTag').hidden=true; store.set('wbp.current', state.route); } };
 $('flyBtn').onclick = startFly;
+/* Flyover speed multiplies how fast the flight advances along the route; it applies immediately, even mid-flight. */
+const FLY_SPEEDS = [0.5, 1, 2, 4];
+state.flySpeed = FLY_SPEEDS.includes(+store.get('wbp.flySpeed', 1)) ? +store.get('wbp.flySpeed', 1) : 1;
+$('flySpeed').value = String(state.flySpeed);
+$('flySpeed').onchange = e => { state.flySpeed = +e.target.value || 1; store.set('wbp.flySpeed', state.flySpeed); };
 $('fitBtn').onclick = fitRoute;
 $('exportBtn').onclick = exportGpx;
 $('saveBtn').onclick = saveRoute;
@@ -844,8 +821,8 @@ Object.assign(api, {
   fitRoute, applyStyle, refreshAnalysis, stopFly, relayout: () => layout(), drawProfile: () => drawProfile(),
   setRoute(r, opts){ stopFly(); setDrawing(false); state.route = r; routeChanged({now:true}); if(opts && opts.fit) fitRoute(); },
   refreshRoute(){ routeChanged({now:true}); },
-  setRose(keys){ state.rose = new Set(keys); buildRose(); refreshAnalysis(); },
-  setMode(mode){ state.mode = mode; const r = document.querySelector('input[name=mode][value="'+mode+'"]'); if(r) r.checked = true; refreshAnalysis(); },
+  setOverlay, overlayOn: m => !!state.layers[m],
+  setMode(mode){ setOverlay('slope', mode === 'slope'); setOverlay('aspect', mode === 'aspect'); },   // older modules: one analysis layer at a time
   on(evt, fn){ hooks[evt].push(fn); },
   whenStyle(fn){ hooks.style.push(fn); if(styleReady){ try{ fn(); }catch(e){ console.warn(e); } } },
   isStyleReady: () => styleReady,
@@ -868,7 +845,7 @@ async function probeDem(){
 }
 state.route = store.get('wbp.current', null) || EXAMPLE_ROUTE;
 if(state.route && (!Array.isArray(state.route.coords))) state.route = EXAMPLE_ROUTE;
-buildRose(); renderLegend(); renderSaved(); layout();
+renderLegend(); renderSaved(); layout();
 routeChanged({now:true});
 map.once('load', layout);
 probeDem(); loadAvy();
@@ -1505,10 +1482,11 @@ const DEFAULT_LINK = 'https://utahavalanchecenter.org/';
 
 const saved = W.store.get(STORE, {}) || {};
 const S = {
-  zones: saved.zones || {}, layerOn: !!saved.layerOn, minSlope: saved.minSlope || 30, opacity: saved.opacity || 0.7,
+  zones: saved.zones || {}, layerOn: saved.layerOnSet ? !!saved.layerOn : true, layerOnSet: !!saved.layerOnSet,
+  minSlope: saved.minSlope || 30, opacity: saved.opacity || 0.7,
   brush: 3, zoneKey: 'default', zoneName: '', zoneLink: DEFAULT_LINK, centerName: '', ver: 1
 };
-const persist = () => W.store.set(STORE, {zones:S.zones, layerOn:S.layerOn, minSlope:S.minSlope, opacity:S.opacity});
+const persist = () => W.store.set(STORE, {zones:S.zones, layerOn:S.layerOn, layerOnSet:S.layerOnSet, minSlope:S.minSlope, opacity:S.opacity});
 
 const dayKey = d => new Intl.DateTimeFormat('en-CA', {timeZone:'America/Denver', year:'numeric', month:'2-digit', day:'2-digit'}).format(d);
 const fmtWhen = ms => new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}).format(new Date(ms));
@@ -1562,13 +1540,14 @@ function beforeId(){
   for(const id of ['route-casing', 'route-line', 'route-pts']) if(map.getLayer(id)) return id;
   const l = map.getStyle().layers.find(l => l.type === 'symbol'); return l ? l.id : undefined;
 }
+const layerVis = () => S.layerOn && hasAny() ? 'visible' : 'none';
 let srcDem = null;
 function addLayer(){
   const d = W.DEMS[W.state.dem];
   if(map.getSource('my-rose') && srcDem !== W.state.dem){ if(map.getLayer('my-rose')) map.removeLayer('my-rose'); map.removeSource('my-rose'); }
   if(!map.getSource('my-rose')){ map.addSource('my-rose', {type:'raster', tiles:[tileUrl()], tileSize:d.tileSize, maxzoom:d.analysisMax}); srcDem = W.state.dem; }
   if(!map.getLayer('my-rose')) map.addLayer({id:'my-rose', type:'raster', source:'my-rose', minzoom:10.5,
-    layout:{visibility:S.layerOn ? 'visible' : 'none'}, paint:{'raster-opacity':S.opacity, 'raster-fade-duration':0}}, beforeId());
+    layout:{visibility:layerVis()}, paint:{'raster-opacity':S.opacity, 'raster-fade-duration':0}}, beforeId());
 }
 W.whenStyle(addLayer);
 let refreshT;
@@ -1579,7 +1558,7 @@ function refreshTiles(){
     const src = map.getSource('my-rose');
     if(src && typeof src.setTiles === 'function') src.setTiles([tileUrl()]);
     else if(src){ if(map.getLayer('my-rose')) map.removeLayer('my-rose'); map.removeSource('my-rose'); addLayer(); }
-    if(map.getLayer('my-rose')) map.setLayoutProperty('my-rose', 'visibility', S.layerOn ? 'visible' : 'none');
+    if(map.getLayer('my-rose')) map.setLayoutProperty('my-rose', 'visibility', layerVis());
   }, 120);
 }
 ['bandLow', 'bandHigh'].forEach(id => { const n = document.getElementById(id); if(n) n.addEventListener('change', () => { if(S.layerOn) refreshTiles(); }); });
@@ -1615,8 +1594,9 @@ css.textContent = `
 document.head.append(css);
 
 const sec = W.addSection('myrose', 'My danger rose');
-const avySec = document.getElementById('h-avy') && document.getElementById('h-avy').closest('section');
-if(avySec && avySec.nextElementSibling) avySec.parentElement.insertBefore(sec, avySec.nextElementSibling);
+/* Sits right under Map overlays in the Layers tab. */
+const terrSec = document.getElementById('h-terrain') && document.getElementById('h-terrain').closest('section');
+if(terrSec) terrSec.after(sec);
 /* Header row: title on the left, the official forecast link right beside it. */
 const h2 = sec.querySelector('h2');
 const head = el('div', 'mr-head'); sec.insertBefore(head, h2);
@@ -1650,13 +1630,24 @@ clearAll.onclick = () => {
 };
 fills.append(...fillBtns, fillAll, clearAll);
 const layerLbl = el('label', 'switch'); const layerIn = el('input'); layerIn.type = 'checkbox'; layerIn.id = 'myrose-layer';
-layerLbl.append(el('span', null, 'Color steep terrain by my rose'), layerIn);
+layerLbl.append(el('span', null, 'Danger'), layerIn);
 const opts = el('div'); opts.style.display = 'grid'; opts.style.gridTemplateColumns = '1fr 1fr'; opts.style.gap = '8px';
 const minLbl = el('label', 'field', 'Min slope °'); const minIn = el('input'); minIn.type = 'number'; minIn.min = 20; minIn.max = 45; minIn.value = S.minSlope; minIn.id = 'myrose-min'; minLbl.append(minIn);
 const opLbl = el('label', 'field', 'Opacity'); const opIn = el('input'); opIn.type = 'range'; opIn.min = 0.2; opIn.max = 1; opIn.step = 0.05; opIn.value = S.opacity; opIn.id = 'myrose-op'; opLbl.append(opIn);
 opts.append(minLbl, opLbl);
 const note = el('p', 'note'); note.style.margin = '0';
-sec.append(tag, stale, palette, main, fills, layerLbl, opts, note);
+sec.append(tag, stale, palette, main, fills, opts);
+/* The elevation-band boundaries belong with the rose, so move them here from Map overlays. */
+const bandBox = document.getElementById('bandBox'); if(bandBox) sec.append(bandBox);
+sec.append(note);
+/* The on/off switch lives in the Map overlays list with the other layers. */
+const ovlList = document.getElementById('ovlList');
+if(ovlList){
+  const row = el('div', 'ovl'); row.id = 'ovl-danger';
+  row.append(layerLbl, el('p', 'note', 'Colors steep slopes by the danger levels you paint in My danger rose below.'));
+  row.lastChild.style.margin = '0';
+  ovlList.insertBefore(row, document.getElementById('ovl-zones'));
+} else sec.insertBefore(layerLbl, opts);
 
 /* ---------- rose drawing and painting ---------- */
 function sector(r1, r2, a1, a2){
@@ -1692,7 +1683,15 @@ function paint(i, single){
 function setCells(pred){
   const e = ensureEntry(); e.rose = e.rose.map((v, i) => pred(i) ? S.brush : v); e.enteredAt = Date.now(); touched();
 }
-function touched(){ persist(); render(); refreshTiles(); }
+let lastAny = false, tipShown = false;
+function touched(){
+  const any = hasAny();
+  if(any && !lastAny && S.layerOn && !tipShown && W.overlayOn && (W.overlayOn('slope') || W.overlayOn('aspect'))){
+    tipShown = true; W.toast('Tip: your danger colors draw over slope and aspect shading. Turn those off to see them on their own.');
+  }
+  lastAny = any;
+  persist(); render(); refreshTiles();
+}
 function cellAt(x, y){ const t = document.elementFromPoint(x, y); return t && t.dataset && t.dataset.i != null && svg.contains(t) ? +t.dataset.i : null; }
 svg.addEventListener('pointerdown', e => {
   const i = cellAt(e.clientX, e.clientY); if(i == null) return;
@@ -1734,13 +1733,14 @@ function render(){
     tag.append(el('b', null, fmtWhen(e.enteredAt)));
     tag.append('. It is not an official forecast: the map only shows what you typed in.');
   } else {
-    tag.append('Copy today\'s danger rose here from the official forecast. Pick a level, then tap or drag across the rose. The map can then color steep terrain from it. ', el('b', null, 'This is your own entry, not an official forecast.'));
+    tag.append('Copy today\'s danger rose here from the official forecast. Pick a level, then tap or drag across the rose', S.layerOn ? '; steep terrain on the map fills in as you paint. ' : '. ', el('b', null, 'This is your own entry, not an official forecast.'));
   }
   stale.hidden = !(any && !today);
   stale.textContent = 'This rose is from an earlier day. Update it from today\'s forecast before you rely on it.';
-  layerIn.checked = S.layerOn; layerIn.disabled = !any;
-  opts.hidden = !S.layerOn; note.hidden = !S.layerOn;
-  note.textContent = `Slopes at or above ${S.minSlope}° take the level you set for their aspect and elevation band. Bands split at ${W.state.bandLow.toLocaleString('en-US')} and ${W.state.bandHigh.toLocaleString('en-US')} ft (set under Terrain analysis); match them to the elevations printed on your forecast's rose.`;
+  layerIn.checked = S.layerOn; layerIn.disabled = false;
+  opts.hidden = !S.layerOn;
+  document.dispatchEvent(new CustomEvent('wbp:myrose'));
+  note.textContent = `Slopes at or above ${S.minSlope}° take the level you set for their aspect and elevation band. Bands split at ${W.state.bandLow.toLocaleString('en-US')} and ${W.state.bandHigh.toLocaleString('en-US')} ft ; set them above to match the elevations printed on your forecast's rose.`;
 }
 
 /* ---------- zone and forecast link from the map center ---------- */
@@ -1750,6 +1750,7 @@ function updateZone(){
   const changed = key !== S.zoneKey;
   S.zoneKey = key; S.zoneName = z && z.name ? String(z.name) : ''; S.centerName = z && z.center_id ? String(z.center_id) : '';
   S.zoneLink = (z && typeof z.link === 'string' && /^https?:\/\//.test(z.link)) ? z.link : DEFAULT_LINK;
+  lastAny = hasAny();
   render();
   if(changed && S.layerOn) refreshTiles();
 }
@@ -1757,13 +1758,14 @@ let moveT; map.on('moveend', () => { clearTimeout(moveT); moveT = setTimeout(upd
 
 /* ---------- controls ---------- */
 layerIn.onchange = () => {
-  S.layerOn = layerIn.checked; persist(); render(); refreshTiles();
-  if(S.layerOn && W.state.mode === 'slope'){ W.setMode('off'); W.toast('Slope shading is off so your rose colors read clearly. Turn it back on under Terrain analysis.'); }
+  S.layerOn = layerIn.checked; S.layerOnSet = true; persist(); render(); refreshTiles();
 };
 minIn.onchange = () => { const v = Math.min(45, Math.max(20, Math.round(+minIn.value || 30))); minIn.value = v; S.minSlope = v; persist(); render(); refreshTiles(); };
 opIn.oninput = () => { S.opacity = +opIn.value; persist(); if(map.getLayer('my-rose')) map.setPaintProperty('my-rose', 'raster-opacity', S.opacity); };
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 
+W.myRose = {isEmpty: () => !hasAny()};
+lastAny = hasAny();
 render();
 /* Forecast zones arrive from avalanche.org a moment after load. */
 setTimeout(updateZone, 1500); setTimeout(updateZone, 5000);
@@ -2431,15 +2433,7 @@ function renderNws(s){
   wbox.innerHTML = `<div class="conditions-load">
       <b id="conditions-loadmsg">Wind is likely loading ${names} aspects</b>
       <span class="small muted">Dominant wind from ${DIRS16[Math.round(ws.dir / 22.5) % 16]} (${Math.round(ws.dir)}°), averaging ${Math.round(ws.mean)} mph over the next 24 h. ${caveats.join(' ')} Terrain channels ridge-top wind, so check cross-loaded gullies too.</span>
-      <div class="row"><button class="btn" type="button" id="conditions-addrose" data-lee="${ws.lee.join(',')}">Add lee aspects to the problem rose</button></div>
     </div>`;
-  $('conditions-addrose').onclick = e => {
-    const lee = e.currentTarget.dataset.lee.split(',').map(Number);
-    if(!(W.state.rose instanceof Set)) W.state.rose = new Set(W.state.rose || []);
-    for(const b of ['mid', 'high']) for(const i of lee) W.state.rose.add(b + '-' + i);
-    W.setRose([...W.state.rose]); W.setMode('problem');
-    W.toast(`Added ${lee.map(i => ASP[i]).join(', ')} at mid and upper elevations to the problem rose.`);
-  };
 }
 
 function signed(v, dp){ if(v == null) return '--'; const r = +v.toFixed(dp); return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(dp); }
@@ -2850,6 +2844,16 @@ sec.insertAdjacentHTML('beforeend', `
   </ul>
 `);
 const $ = id => document.getElementById(id);
+/* Place the section after My danger rose, and its on/off switch in the Map overlays list. */
+(() => {
+  const after = document.getElementById('myrose') || (document.getElementById('h-terrain') && document.getElementById('h-terrain').closest('section'));
+  if(after) after.after(sec);
+  const list = $('ovlList'), lbl = $('sunOn') && $('sunOn').closest('label'); if(!list || !lbl) return;
+  lbl.querySelector('span').textContent = 'Sun on slopes';
+  const row = document.createElement('div'); row.className = 'ovl'; row.id = 'ovl-sun';
+  const hint = document.createElement('p'); hint.className = 'note'; hint.style.margin = '0'; hint.textContent = 'Direct sun on each slope for the date and time set in Sun on slopes below.';
+  row.append(lbl, hint); list.insertBefore(row, $('ovl-zones'));
+})();
 const elOn = $('sunOn'), elDate = $('sunDate'), elTime = $('sunTime'), elTimeVal = $('sunTimeVal'),
   elPlay = $('sunPlay'), elRead = $('sunRead'), elOp = $('sunOpacity'), elZoom = $('sunZoom');
 elOn.checked = S.on; elDate.value = S.date; elOp.value = S.opacity;
@@ -3694,7 +3698,7 @@ document.documentElement.classList.add('wbp-shell');
 
 const RAIL_W = 76, DRAWER_W = 360, PHONE = window.matchMedia('(max-width: 759px)');
 const saved = W.store.get('wbp.ui', {}) || {};
-const S = { tab: saved.tab || 'forecast', open: saved.open !== false, dockCollapsed: !!saved.dockCollapsed, phoneOpen: false };
+const S = { tab: saved.tab === 'forecast' ? 'layers' : (saved.tab || 'layers'), open: saved.open !== false, dockCollapsed: !!saved.dockCollapsed, phoneOpen: false };
 const persist = () => W.store.set('wbp.ui', {tab:S.tab, open:S.open, dockCollapsed:S.dockCollapsed});
 
 /* ---------- icons ---------- */
@@ -3712,7 +3716,6 @@ const I = {
 };
 const TABS = [
   {id:'layers',   label:'Layers',    title:'Map layers',          icon:I.layers},
-  {id:'forecast', label:'Forecast',  title:'Avalanche forecast',  icon:I.forecast},
   {id:'weather',  label:'Weather',   title:'Snow and weather',    icon:I.weather},
   {id:'route',    label:'Route',     title:'Route',               icon:I.route},
   {id:'tools',    label:'Tools',     title:'Terrain tools',       icon:I.tools,   extra:true},
@@ -3721,7 +3724,7 @@ const TABS = [
   {id:'about',    label:'About',     title:'About this map',      icon:I.about,   extra:true, bottom:true},
 ];
 const TAB = Object.fromEntries(TABS.map(t => [t.id, t]));
-if(!TAB[S.tab] && S.tab !== 'more') S.tab = 'forecast';
+if(!TAB[S.tab] && S.tab !== 'more') S.tab = 'layers';
 
 /* ---------- styles ---------- */
 const css = document.createElement('style');
@@ -3818,8 +3821,8 @@ moreSec.append(moreNav);
 body.insertBefore(moreSec, body.firstChild);
 
 /* ---------- sort panel sections into tabs ---------- */
-const BY_HEADING = {'h-map':'layers', 'h-terrain':'layers', 'h-avy':'forecast', 'h-route':'route'};
-const BY_ID = {myrose:'forecast', uacforecast:'forecast', conditions:'weather', sun:'layers', customdem:'layers',
+const BY_HEADING = {'h-map':'layers', 'h-terrain':'layers', 'h-avy':'layers', 'h-route':'route'};
+const BY_ID = {myrose:'layers', uacforecast:'layers', conditions:'weather', sun:'layers', customdem:'layers',
   section:'tools', avyterrain:'tools', tripplan:'trip', offline:'offline', 'shell-more':'more'};
 function tabFor(sec){
   if(sec.dataset.tab) return sec.dataset.tab;
@@ -3836,16 +3839,17 @@ new MutationObserver(() => { tagSections(); applyTab(); }).observe(body, {childL
 /* ---------- top bar: danger badge + quick layer chips ---------- */
 const topbar = document.createElement('div'); topbar.className = 'topbar'; topbar.id = 'topbar';
 const danger = $('danger');
-if(danger){ topbar.append(danger); danger.title = 'Open the forecast panel';
-  danger.addEventListener('click', e => { if(!e.target.closest('a')) setTab('forecast', true); }); }
+const showRose = () => { setTab('layers', true); const r = $('myrose'); if(r && r.scrollIntoView) setTimeout(() => r.scrollIntoView({block:'start'}), 60); };
+if(danger){ topbar.append(danger); danger.title = 'Open your danger rose';
+  danger.addEventListener('click', e => { if(!e.target.closest('a')) showRose(); }); }
 const chips = document.createElement('div'); chips.className = 'chips'; chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Quick layers');
 const CHIPS = [
-  {label:'Slope',    on:() => W.state.mode === 'slope',   toggle:() => W.setMode(W.state.mode === 'slope' ? 'off' : 'slope')},
-  {label:'Aspect',   on:() => W.state.mode === 'aspect',  toggle:() => W.setMode(W.state.mode === 'aspect' ? 'off' : 'aspect')},
-  {label:'Problems', on:() => W.state.mode === 'problem', toggle:() => { W.setMode(W.state.mode === 'problem' ? 'off' : 'problem'); if(W.state.mode === 'problem') setTab('layers', true); }},
-  {label:'My rose',  on:() => !!($('myrose-layer') && $('myrose-layer').checked), toggle:() => {
+  {label:'Slope',  on:() => !!(W.overlayOn && W.overlayOn('slope')),  toggle:() => W.setOverlay('slope', !W.overlayOn('slope'))},
+  {label:'Aspect', on:() => !!(W.overlayOn && W.overlayOn('aspect')), toggle:() => W.setOverlay('aspect', !W.overlayOn('aspect'))},
+  {label:'Danger', on:() => !!($('myrose-layer') && $('myrose-layer').checked) && !(W.myRose && W.myRose.isEmpty()), toggle:() => {
     const i = $('myrose-layer'); if(!i) return;
-    if(i.disabled){ setTab('forecast', true); W.toast('Fill in your danger rose first, then turn on its colors.'); return; }
+    if(W.myRose && W.myRose.isEmpty()){ if(!i.checked) i.click(); showRose();
+      W.toast('Your danger rose is empty. Pick a level and tap the rose; the map fills in as you go.'); return; }
     i.click(); }},
   {label:'Sun',      on:() => !!($('sunOn') && $('sunOn').checked), toggle:() => { const i = $('sunOn'); if(i) i.click(); }},
 ];
@@ -3855,6 +3859,8 @@ function syncChips(){ CHIPS.forEach((c, i) => chipBtns[i].setAttribute('aria-pre
 topbar.append(chips);
 document.body.append(topbar);
 document.addEventListener('change', () => setTimeout(syncChips, 0), true);
+document.addEventListener('wbp:myrose', () => setTimeout(syncChips, 0));   // rose painted or cleared
+document.addEventListener('wbp:overlays', () => setTimeout(syncChips, 0));   // slope/aspect switched from anywhere
 syncChips();
 
 /* ---------- route dock (wide screens) ---------- */
@@ -3875,7 +3881,7 @@ const dockNote = document.createElement('p'); dockNote.className = 'note route-d
 dockNote.textContent = 'Stats, the elevation profile and the flyover sit along the bottom of the map.';
 if(routeSec) routeSec.insertBefore(dockNote, $('stats'));
 /* Placeholders remember where each piece lives in the Route panel so it can move back on narrow screens. */
-const MOVERS = ['stats', 'profile', 'readout', 'flyBtn', 'fitBtn'].map(id => ({id, el:$(id), ph:document.createComment('slot:' + id)}));
+const MOVERS = ['stats', 'profile', 'readout', 'flyBtn', 'flySpeed', 'fitBtn'].map(id => ({id, el:$(id), ph:document.createComment('slot:' + id)}));
 MOVERS.forEach(m => { if(m.el) m.el.before(m.ph); });
 let docked = false;
 function wantDock(){ const r = W.state.route; return !PHONE.matches && window.innerWidth >= 900 && !!(r && r.coords && r.coords.length >= 2); }
@@ -3884,7 +3890,7 @@ function placeDock(){
   if(want !== docked){
     docked = want;
     MOVERS.forEach(m => { if(!m.el) return;
-      if(docked){ if(m.id === 'stats') dockStats.append(m.el); else if(m.id === 'flyBtn' || m.id === 'fitBtn') dockActions.append(m.el); else dockBody.append(m.el); }
+      if(docked){ if(m.id === 'stats') dockStats.append(m.el); else if(m.id === 'flyBtn' || m.id === 'flySpeed' || m.id === 'fitBtn') dockActions.append(m.el); else dockBody.append(m.el); }
       else m.ph.after(m.el); });
     if(docked){ dockActions.append(tripBtn, collapseBtn); }
   }
