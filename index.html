@@ -75,9 +75,14 @@ select.btn{appearance:auto;-webkit-appearance:menulist;width:auto;padding:6px 6p
 .seg input:focus-visible+span{outline:2px solid var(--accent)}
 
 .legend{display:flex;flex-wrap:wrap;gap:6px 10px;font-size:12px}
-.ovl-list{display:grid;gap:10px}
-.ovl{display:grid;gap:6px}
-.ovl .legend:empty,.ovl .legend[hidden]{display:none}
+.seg-multi{display:flex}
+.seg-multi button{flex:1 1 0;min-width:0;appearance:none;border:0;background:none;font:inherit;padding:6px 2px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg-multi button[hidden]{display:none}
+.seg-multi button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.seg-multi button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ovl-panel{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
+.ovl-panel[hidden]{display:none}
+.ovl-panel h3{margin:0;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
 .band-box{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 
@@ -183,23 +188,25 @@ select.btn{appearance:auto;-webkit-appearance:menulist;width:auto;padding:6px 6p
     </section>
 
     <section aria-labelledby="h-terrain">
-      <div class="row between"><h2 id="h-terrain">Map overlays</h2><span class="small muted" id="zoomHint"></span></div>
-      <p class="note" style="margin:0">Turn on as many as you like; they draw on top of each other.</p>
-      <div class="ovl-list" id="ovlList">
-        <div class="ovl" id="ovl-slope">
-          <label class="switch"><span>Slope angle</span><input type="checkbox" id="slopeOn"></label>
-          <div class="legend" id="legendSlope"></div>
-        </div>
-        <div class="ovl" id="ovl-aspect">
-          <label class="switch"><span>Aspect</span><input type="checkbox" id="aspectOn"></label>
-          <div class="legend" id="legendAspect"></div>
-        </div>
-        <label class="field" id="ovl-opacity">Slope and aspect opacity <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.6"></label>
-        <div class="ovl" id="ovl-zones">
-          <label class="switch"><span>Forecast zones</span><input type="checkbox" id="avyToggle"></label>
-          <p class="note" style="margin:0">Zone outlines colored by today's danger rating from avalanche.org. Read the full forecast at <a href="https://utahavalanchecenter.org/forecast/salt-lake" target="_blank" rel="noopener">utahavalanchecenter.org</a> before you go.</p>
-        </div>
+      <div class="row between"><h2 id="h-terrain">Overlays</h2><span class="small muted" id="zoomHint"></span></div>
+      <div class="seg seg-multi" id="ovlSeg" role="group" aria-label="Map overlays. Several can be on at once.">
+        <button type="button" data-ovl="slope" aria-pressed="false">Slope</button>
+        <button type="button" data-ovl="aspect" aria-pressed="false">Aspect</button>
+        <button type="button" data-ovl="danger" aria-pressed="false" hidden>Danger</button>
+        <button type="button" data-ovl="sun" aria-pressed="false" hidden>Sun</button>
+        <button type="button" data-ovl="zones" aria-pressed="false">Zones</button>
       </div>
+      <p class="note" style="margin:0">Tap to turn each on or off. Several can show at once; the details for each one you turn on appear below.</p>
+      <div class="ovl-inputs" id="ovlInputs" hidden>
+        <input type="checkbox" id="slopeOn"><input type="checkbox" id="aspectOn"><input type="checkbox" id="avyToggle">
+      </div>
+      <div class="ovl-panel" data-panel="slope"><h3>Slope angle</h3><div class="legend" id="legendSlope"></div></div>
+      <div class="ovl-panel" data-panel="aspect"><h3>Aspect</h3><div class="legend" id="legendAspect"></div></div>
+      <label class="field" id="ovl-opacity">Slope and aspect opacity <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.6"></label>
+      <div class="ovl-panel" data-panel="danger" id="ovlDangerPanel"></div>
+      <div class="ovl-panel" data-panel="sun" id="ovlSunPanel"></div>
+      <div class="ovl-panel" data-panel="zones"><h3>Forecast zones</h3>
+        <p class="note" style="margin:0">Zone outlines colored by today's danger rating from avalanche.org. Read the full forecast at <a href="https://utahavalanchecenter.org/forecast/salt-lake" target="_blank" rel="noopener">utahavalanchecenter.org</a> before you go.</p></div>
       <div class="band-box" id="bandBox">
         <label class="field">Low/mid band ft<input type="number" id="bandLow" min="4000" max="12000" step="100" value="8000"></label>
         <label class="field">Mid/high band ft<input type="number" id="bandHigh" min="4000" max="13000" step="100" value="9500"></label>
@@ -434,9 +441,11 @@ function addOverlays(){
 let styleReady = false;
 map.on('style.load', () => { styleReady = true; addOverlays(); fire('style'); });
 
+/* 2D keeps the terrain attached but flattened. Removing and re-adding it makes MapLibre reload the elevation
+   tiles while the camera tilts back up, which left the camera aimed at sea level, under the mountains. */
 function applyTerrain(){
   if(!map.getSource('dem-terrain')) return;
-  map.setTerrain(state.terrain3d ? {source:'dem-terrain', exaggeration:state.exaggeration} : null);
+  map.setTerrain({source:'dem-terrain', exaggeration: state.terrain3d ? state.exaggeration : 0.001});
 }
 function applyStyle(){ stopFly(); styleReady = false; map.setStyle(styleFor(state.base), {diff:false}); }
 function refreshAnalysis(){
@@ -503,9 +512,22 @@ function renderLegend(){
   fill($('legendSlope'), state.layers.slope ? SLOPE_CLASSES.map(k => [k.c, k.label]) : []);
   fill($('legendAspect'), state.layers.aspect ? ASPECTS.map((a, i) => [ASPECT_COLORS[i], a]) : []);
   $('slopeOn').checked = !!state.layers.slope; $('aspectOn').checked = !!state.layers.aspect;
-  $('ovl-opacity').hidden = !anyAnalysis();
+  syncSeg();
   $('zoomHint').textContent = (anyAnalysis() && map.getZoom() < 10.5) ? 'Zoom in to see shading' : '';
 }
+/* Overlay row: each button flips its layer's switch (core or module); every layer that is on shows its details below. */
+const SEG_INPUT = {slope:'slopeOn', aspect:'aspectOn', danger:'myrose-layer', sun:'sunOn', zones:'avyToggle'};
+function syncSeg(){
+  document.querySelectorAll('#ovlSeg [data-ovl]').forEach(b => {
+    const k = b.dataset.ovl, i = $(SEG_INPUT[k]), on = !!(i && i.checked);
+    b.hidden = !i; b.setAttribute('aria-pressed', String(on));
+    const p = document.querySelector(`.ovl-panel[data-panel="${k}"]`); if(p) p.hidden = !on;
+  });
+  $('ovl-opacity').hidden = !anyAnalysis();
+}
+$('ovlSeg').addEventListener('click', e => { const b = e.target.closest('[data-ovl]'); if(!b) return; const i = $(SEG_INPUT[b.dataset.ovl]); if(i){ i.click(); syncSeg(); } });
+document.addEventListener('change', () => setTimeout(syncSeg, 0), true);
+['wbp:overlays', 'wbp:myrose'].forEach(t => document.addEventListener(t, () => setTimeout(syncSeg, 0)));
 function setOverlay(m, on){
   if(!OVERLAYS.includes(m)) return;
   state.layers[m] = !!on; store.set('wbp.overlays', state.layers); refreshAnalysis();
@@ -821,7 +843,7 @@ Object.assign(api, {
   fitRoute, applyStyle, refreshAnalysis, stopFly, relayout: () => layout(), drawProfile: () => drawProfile(),
   setRoute(r, opts){ stopFly(); setDrawing(false); state.route = r; routeChanged({now:true}); if(opts && opts.fit) fitRoute(); },
   refreshRoute(){ routeChanged({now:true}); },
-  setOverlay, overlayOn: m => !!state.layers[m],
+  setOverlay, overlayOn: m => !!state.layers[m], syncOverlays: () => syncSeg(),
   setMode(mode){ setOverlay('slope', mode === 'slope'); setOverlay('aspect', mode === 'aspect'); },   // older modules: one analysis layer at a time
   on(evt, fn){ hooks[evt].push(fn); },
   whenStyle(fn){ hooks.style.push(fn); if(styleReady){ try{ fn(); }catch(e){ console.warn(e); } } },
@@ -1567,7 +1589,8 @@ function refreshTiles(){
 const css = document.createElement('style');
 css.textContent = `
 .mr-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.mr-head h2{margin:0}
+.mr-head h2,.mr-head h3{margin:0}
+.mr-panel{display:grid;gap:10px}
 .mr-you{display:inline-block;margin-top:5px;font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:20px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
 .mr-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:5px 10px;white-space:nowrap;background:var(--surface-2)}
 .mr-link:hover{border-color:var(--accent)}
@@ -1593,12 +1616,13 @@ css.textContent = `
 `;
 document.head.append(css);
 
-const sec = W.addSection('myrose', 'My danger rose');
-/* Sits right under Map overlays in the Layers tab. */
-const terrSec = document.getElementById('h-terrain') && document.getElementById('h-terrain').closest('section');
-if(terrSec) terrSec.after(sec);
+/* Lives in the Danger panel right under the overlay buttons; falls back to its own section. */
+const host = document.getElementById('ovlDangerPanel');
+let sec;
+if(host){ sec = el('div', 'mr-panel'); sec.id = 'myrose'; sec.append(el('h3', null, 'My danger rose')); host.append(sec); }
+else sec = W.addSection('myrose', 'My danger rose');
 /* Header row: title on the left, the official forecast link right beside it. */
-const h2 = sec.querySelector('h2');
+const h2 = sec.querySelector('h2, h3');
 const head = el('div', 'mr-head'); sec.insertBefore(head, h2);
 const titleBox = el('div'); titleBox.append(h2, el('span', 'mr-you', 'You fill this in')); head.append(titleBox);
 const link = el('a', 'mr-link'); link.target = '_blank'; link.rel = 'noopener'; head.append(link);
@@ -1640,14 +1664,9 @@ sec.append(tag, stale, palette, main, fills, opts);
 /* The elevation-band boundaries belong with the rose, so move them here from Map overlays. */
 const bandBox = document.getElementById('bandBox'); if(bandBox) sec.append(bandBox);
 sec.append(note);
-/* The on/off switch lives in the Map overlays list with the other layers. */
-const ovlList = document.getElementById('ovlList');
-if(ovlList){
-  const row = el('div', 'ovl'); row.id = 'ovl-danger';
-  row.append(layerLbl, el('p', 'note', 'Colors steep slopes by the danger levels you paint in My danger rose below.'));
-  row.lastChild.style.margin = '0';
-  ovlList.insertBefore(row, document.getElementById('ovl-zones'));
-} else sec.insertBefore(layerLbl, opts);
+/* The Danger button in the overlay row flips this switch; it stays hidden there. */
+const ovlInputs = document.getElementById('ovlInputs');
+if(ovlInputs) ovlInputs.append(layerLbl); else sec.insertBefore(layerLbl, opts);
 
 /* ---------- rose drawing and painting ---------- */
 function sector(r1, r2, a1, a2){
@@ -1765,6 +1784,7 @@ opIn.oninput = () => { S.opacity = +opIn.value; persist(); if(map.getLayer('my-r
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 
 W.myRose = {isEmpty: () => !hasAny()};
+if(W.syncOverlays) W.syncOverlays();
 lastAny = hasAny();
 render();
 /* Forecast zones arrive from avalanche.org a moment after load. */
@@ -2819,7 +2839,11 @@ css.textContent = `
 `;
 document.head.append(css);
 
-const sec = W.addSection('sun', 'Sun on slopes');
+/* Lives in the Sun panel right under the overlay buttons; falls back to its own section. */
+const host = document.getElementById('ovlSunPanel');
+let sec;
+if(host){ sec = document.createElement('div'); sec.id = 'sun'; sec.style.cssText = 'display:grid;gap:10px'; sec.innerHTML = '<h3>Sun on slopes</h3>'; host.append(sec); }
+else sec = W.addSection('sun', 'Sun on slopes');
 sec.insertAdjacentHTML('beforeend', `
   <label class="switch"><span>Show direct sun on slopes</span><input type="checkbox" id="sunOn"></label>
   <label class="field">Date <input type="date" id="sunDate"></label>
@@ -2844,19 +2868,12 @@ sec.insertAdjacentHTML('beforeend', `
   </ul>
 `);
 const $ = id => document.getElementById(id);
-/* Place the section after My danger rose, and its on/off switch in the Map overlays list. */
-(() => {
-  const after = document.getElementById('myrose') || (document.getElementById('h-terrain') && document.getElementById('h-terrain').closest('section'));
-  if(after) after.after(sec);
-  const list = $('ovlList'), lbl = $('sunOn') && $('sunOn').closest('label'); if(!list || !lbl) return;
-  lbl.querySelector('span').textContent = 'Sun on slopes';
-  const row = document.createElement('div'); row.className = 'ovl'; row.id = 'ovl-sun';
-  const hint = document.createElement('p'); hint.className = 'note'; hint.style.margin = '0'; hint.textContent = 'Direct sun on each slope for the date and time set in Sun on slopes below.';
-  row.append(lbl, hint); list.insertBefore(row, $('ovl-zones'));
-})();
+/* The Sun button in the overlay row flips this switch; it stays hidden there. */
+(() => { const box = $('ovlInputs'), lbl = $('sunOn') && $('sunOn').closest('label'); if(box && lbl) box.append(lbl); })();
 const elOn = $('sunOn'), elDate = $('sunDate'), elTime = $('sunTime'), elTimeVal = $('sunTimeVal'),
   elPlay = $('sunPlay'), elRead = $('sunRead'), elOp = $('sunOpacity'), elZoom = $('sunZoom');
 elOn.checked = S.on; elDate.value = S.date; elOp.value = S.opacity;
+if(W.syncOverlays) W.syncOverlays();
 
 function center(){ const c = map.getCenter(); return {lat:c.lat, lon:c.lng}; }
 function computeSun(){ const {lat, lon} = center(); S.loc = {lat, lon}; S.sun = sunPosition(toUtcMs(S.date, S.minutes), lat, lon); }
@@ -2911,7 +2928,7 @@ elOp.oninput = () => { S.opacity = +elOp.value; if(map.getLayer('sun')) map.setP
 function stopPlay(){ if(S.playing){ clearInterval(S.playing); S.playing = null; } elPlay.textContent = 'Play day'; elPlay.setAttribute('aria-pressed', 'false'); }
 elPlay.onclick = () => {
   if(S.playing){ stopPlay(); return; }
-  if(!S.on){ S.on = elOn.checked = true; save(); setVisible(); zoomNote(); }
+  if(!S.on){ S.on = elOn.checked = true; save(); setVisible(); zoomNote(); if(W.syncOverlays) W.syncOverlays(); }
   if(+elTime.value >= S.steps.length - 1) elTime.value = 0;
   S.minutes = S.steps[+elTime.value]; update(true);
   elPlay.textContent = 'Pause'; elPlay.setAttribute('aria-pressed', 'true');
